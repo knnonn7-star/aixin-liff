@@ -7,95 +7,803 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- 使用輕量化掃描庫 -->
-  <script src="https://unpkg.com/@zxing/library@0.19.1"></script>
+  <!-- 引入穩定的照片解碼套件 -->
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    @media print {
+      body * { visibility: hidden; }
+      #printable-report, #printable-report * { visibility: visible; }
+      #printable-report { position: absolute; left: 0; top: 0; width: 100%; }
+    }
+  </style>
 </head>
-<body class="bg-slate-100 min-h-screen p-3 flex flex-col items-center">
+<body class="bg-slate-100 min-h-screen p-3 md:p-6 flex flex-col items-center">
 
-  <div class="bg-white w-full max-w-xl rounded-2xl shadow-lg p-4 my-auto">
-    <h1 class="text-xl font-bold text-slate-800 text-center mb-4">🏥 愛欣診所管理系統</h1>
+  <div class="bg-white w-full max-w-2xl rounded-2xl shadow-lg p-4 md:p-6 my-auto">
     
-    <!-- 主功能選單 -->
-    <section id="sec-main-menu" class="space-y-3">
-      <button onclick="openSubPage('register')" class="w-full bg-blue-600 text-white font-bold p-4 rounded-2xl">📦 現場登記</button>
-      <button onclick="openSubPage('invoice')" class="w-full bg-amber-500 text-white font-bold p-4 rounded-2xl">📷 櫃檯補登</button>
-      <button onclick="openSubPage('admin')" class="w-full bg-slate-800 text-white font-bold p-4 rounded-2xl">📊 院長對帳</button>
-    </section>
-
-    <!-- 第二層介面 -->
-    <div id="sub-page-header" class="hidden mb-4 pb-2 border-b flex justify-between items-center">
-      <button onclick="backToMainMenu()" class="text-xs bg-slate-100 px-3 py-1.5 rounded-lg font-bold">⬅️ 返回</button>
-      <span id="sub-page-title" class="text-xs font-bold"></span>
+    <!-- 頁頭資訊 -->
+    <div class="text-center mb-4">
+      <h1 class="text-xl font-bold text-slate-800 flex items-center justify-center gap-2">
+        🏥 愛欣診所管理系統
+      </h1>
+      <p class="text-xs text-slate-500 mt-0.5">LINE 整合式金流與進貨管理</p>
     </div>
 
-    <section id="sec-register" class="hidden space-y-4">
-      <!-- 簡化後的進貨模式 -->
-      <form id="cash-form" class="space-y-4">
-        <!-- (保留原有登記欄位) -->
-        <label class="block text-xs font-bold text-slate-700">選擇憑證模式</label>
-        <div class="grid grid-cols-2 gap-2">
-            <label class="p-2 border rounded-xl text-xs font-bold cursor-pointer"><input type="radio" name="doc_mode" value="receipt_only" checked onchange="toggleDocMode()"> 📄 拍照簽收單</label>
-            <label class="p-2 border rounded-xl text-xs font-bold cursor-pointer bg-emerald-50"><input type="radio" name="doc_mode" value="has_invoice" onchange="toggleDocMode()"> 🧾 掃描發票</label>
+    <!-- 當前使用者標籤 -->
+    <div id="user-info-bar" class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 mb-4 flex justify-between items-center text-xs">
+      <span class="text-slate-600 font-medium">當前使用者：</span>
+      <span id="user-name" class="font-bold text-slate-800 bg-slate-200 px-2.5 py-0.5 rounded-md">載入中...</span>
+    </div>
+
+    <!-- ==================== 第一層：主功能選單入口 ==================== -->
+    <section id="sec-main-menu" class="space-y-3">
+      <p class="text-xs font-bold text-slate-500 text-center mb-2">請選擇您要執行的功能：</p>
+      
+      <button onclick="openSubPage('register')" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold p-4 rounded-2xl shadow-md flex items-center justify-between transition group">
+        <div class="flex items-center gap-3">
+          <span class="text-2xl">📦</span>
+          <div class="text-left">
+            <div class="text-base font-bold">現場進貨 / 零用金登記</div>
+            <div class="text-xs text-blue-100 font-normal">衛材/藥品進貨點收（支援簽收單或隨貨發票）</div>
+          </div>
         </div>
-        
-        <div id="doc-receipt-box" class="p-3 border rounded-xl">
-            <input type="file" id="receipt" accept="image/*" class="w-full text-xs">
+        <span class="text-lg group-hover:translate-x-1 transition-transform">➔</span>
+      </button>
+
+      <button onclick="openSubPage('invoice')" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold p-4 rounded-2xl shadow-md flex items-center justify-between transition group">
+        <div class="flex items-center gap-3">
+          <span class="text-2xl">📷</span>
+          <div class="text-left">
+            <div class="text-base font-bold">櫃檯 / 會計發票補登</div>
+            <div class="text-xs text-amber-100 font-normal">補寄發票對帳（拍照辨識號碼與金額）</div>
+          </div>
+        </div>
+        <span class="text-lg group-hover:translate-x-1 transition-transform">➔</span>
+      </button>
+
+      <button onclick="openSubPage('admin')" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold p-4 rounded-2xl shadow-md flex items-center justify-between transition group">
+        <div class="flex items-center gap-3">
+          <span class="text-2xl">📊</span>
+          <div class="text-left">
+            <div class="text-base font-bold">院長 / 財務統計與月報表</div>
+            <div class="text-xs text-slate-300 font-normal">待付款統計、廠商時間軸結餘、月度報表匯出</div>
+          </div>
+        </div>
+        <span class="text-lg group-hover:translate-x-1 transition-transform">➔</span>
+      </button>
+    </section>
+
+    <!-- ==================== 第二層：功能頁面 ==================== -->
+    
+    <!-- 返回首頁按鈕 -->
+    <div id="sub-page-header" class="hidden mb-4 pb-2 border-b border-slate-200 flex justify-between items-center">
+      <button onclick="backToMainMenu()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1">
+        ⬅️ 返回主選單
+      </button>
+      <span id="sub-page-title" class="text-xs font-bold text-slate-600"></span>
+    </div>
+
+    <!-- 1. 現場登記表單 -->
+    <section id="sec-register" class="hidden space-y-4">
+      <form id="cash-form" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1.5">登記類型</label>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="flex items-center justify-center p-2 border-2 border-blue-500 bg-blue-50 text-blue-800 rounded-xl cursor-pointer font-bold text-xs text-center">
+              <input type="radio" name="type" value="delivery" checked onchange="updateFormMode()" class="mr-1.5">
+              📦 衛材進貨
+            </label>
+            <label class="flex items-center justify-center p-2 border-2 border-indigo-500 bg-indigo-50 text-indigo-800 rounded-xl cursor-pointer font-bold text-xs text-center">
+              <input type="radio" name="type" value="pharma" onchange="updateFormMode()" class="mr-1.5">
+              💊 藥品進貨
+            </label>
+            <label class="flex items-center justify-center p-2 border-2 border-rose-500 bg-rose-50 text-rose-800 rounded-xl cursor-pointer font-bold text-xs text-center">
+              <input type="radio" name="type" value="expense" onchange="updateFormMode()" class="mr-1.5">
+              💸 零用金支出
+            </label>
+            <label class="flex items-center justify-center p-2 border-2 border-emerald-500 bg-emerald-50 text-emerald-800 rounded-xl cursor-pointer font-bold text-xs text-center">
+              <input type="radio" name="type" value="income" onchange="updateFormMode()" class="mr-1.5">
+              💰 自費收入
+            </label>
+          </div>
         </div>
 
-        <div id="doc-invoice-box" class="hidden p-3 border rounded-xl bg-emerald-50">
-            <label class="block text-xs font-bold mb-2">📸 點擊下方拍照自動識別發票</label>
-            <input type="file" id="reg-qr-file" accept="image/*" capture="environment" class="w-full text-xs bg-white p-2 rounded" onchange="handleFileQr(this, 'reg-invoice-no', 'amount')">
-            <input type="text" id="reg-invoice-no" placeholder="發票號碼" class="w-full p-2 mt-2 border rounded text-xs">
-            <input type="number" id="amount" placeholder="金額" class="w-full p-2 mt-2 border rounded text-xs">
+        <div id="supplier-group">
+          <label class="block text-xs font-bold text-slate-700 mb-1">進貨廠商</label>
+          <select id="supplier" class="w-full p-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 bg-white">
+            <option value="台灣百特 (Baxter)">台灣百特 (Baxter)</option>
+            <option value="台灣費森尤斯 (Fresenius)">台灣費森尤斯 (Fresenius)</option>
+            <option value="濟生醫藥">濟生醫藥</option>
+            <option value="杏昌生技">杏昌生技</option>
+            <option value="合作藥局/其他大藥廠">合作藥局/其他大藥廠</option>
+          </select>
         </div>
-        <button type="submit" id="submit-btn" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl">送出</button>
+
+        <div id="category-group" class="hidden">
+          <label class="block text-xs font-bold text-slate-700 mb-1">分類項目</label>
+          <select id="category" class="w-full p-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 bg-white"></select>
+        </div>
+
+        <!-- 現場進貨憑證種類 (二選一) -->
+        <div id="delivery-doc-mode-section" class="space-y-3">
+          <label class="block text-xs font-bold text-slate-700 mb-1">本次進貨憑證種類</label>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="flex items-center justify-center p-2.5 border-2 border-slate-400 bg-slate-50 text-slate-800 rounded-xl cursor-pointer font-bold text-xs text-center">
+              <input type="radio" name="doc_mode" value="receipt_only" checked onchange="toggleDocMode()" class="mr-1.5">
+              📄 只有簽收單 (發票後補)
+            </label>
+            <label class="flex items-center justify-center p-2.5 border-2 border-emerald-500 bg-emerald-50 text-emerald-800 rounded-xl cursor-pointer font-bold text-xs text-center">
+              <input type="radio" name="doc_mode" value="has_invoice" onchange="toggleDocMode()" class="mr-1.5">
+              🧾 隨貨附發票 (一次結案)
+            </label>
+          </div>
+
+          <!-- 模式 A：僅拍照簽收單照片 -->
+          <div id="doc-receipt-box" class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <label class="block text-xs font-bold text-slate-700 mb-1">拍照上傳簽收單 / 送貨單照片</label>
+            <input type="file" id="receipt" accept="image/*" class="w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700">
+            <p class="text-[11px] text-slate-400 mt-1">無需填寫金額，送出後將自動進入「櫃檯待補發票」對帳清單。</p>
+          </div>
+
+          <!-- 模式 B：隨貨發票拍照解析區 -->
+          <div id="doc-invoice-box" class="hidden bg-emerald-50 p-3 rounded-xl border border-emerald-200 space-y-2">
+            <div class="flex justify-between items-center">
+              <span class="text-xs font-bold text-emerald-900">🧾 隨貨發票對帳解析</span>
+              <span class="text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded font-bold">免拍照簽收單</span>
+            </div>
+
+            <label class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer text-center shadow-sm">
+              📸 拍照發票左側 QR Code 辨識
+              <input type="file" id="reg-qr-file" accept="image/*" class="hidden" onchange="decodeQrFromFile(this, 'reg-invoice-no', 'amount')">
+            </label>
+
+            <div class="grid grid-cols-2 gap-2 pt-1">
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">發票號碼</label>
+                <input type="text" id="reg-invoice-no" placeholder="例：AB12345678" class="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono bg-white">
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">發票總金額 (NT$)</label>
+                <input type="number" id="amount" min="0" placeholder="0" class="w-full p-2 border border-slate-300 rounded-lg text-xs bg-white">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">備註 / 進貨品項簡述</label>
+          <textarea id="note" rows="2" placeholder="例如：透析液 10 箱，或 EPO 藥品 50 支" class="w-full p-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500"></textarea>
+        </div>
+
+        <button type="submit" id="submit-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-xl shadow-md hover:bg-blue-700 active:scale-[0.98] transition duration-150 text-sm">
+          確認點收並送出
+        </button>
       </form>
     </section>
+
+    <!-- 2. 櫃檯/會計發票補登 -->
+    <section id="sec-invoice" class="hidden space-y-3">
+      <div class="flex justify-between items-center bg-amber-50 p-3 rounded-xl border border-amber-200 mb-2">
+        <span class="text-xs text-amber-800 font-bold">待補發票與對帳專區</span>
+        <button onclick="loadPendingInvoices()" class="text-xs bg-amber-200 text-amber-900 px-2.5 py-1 rounded-lg font-bold">🔄 重新整理</button>
+      </div>
+      <div id="pending-invoice-list" class="space-y-3">
+        <p class="text-center text-xs text-slate-400 py-6">資料載入中...</p>
+      </div>
+    </section>
+
+    <!-- 3. 院長 / 財務統計與月報表 -->
+    <section id="sec-admin" class="hidden space-y-5">
+      <div class="bg-slate-900 text-white p-3 rounded-xl flex justify-between items-center">
+        <span class="text-xs font-bold">📊 院長財務決策與報表中心</span>
+        <button onclick="loadAdminData()" class="text-xs bg-blue-600 text-white px-2.5 py-1 rounded-lg font-bold">🔄 重新整理數據</button>
+      </div>
+
+      <div>
+        <h3 class="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1">📌 1. 待處理款項概覽</h3>
+        <div class="grid grid-cols-2 gap-3 text-xs">
+          <div class="bg-amber-50 border border-amber-200 rounded-xl p-3">
+            <span class="text-amber-800 font-bold">待補發票簽收單</span>
+            <p id="stat-pending-count" class="text-xl font-black text-amber-700 mt-1">0 筆</p>
+          </div>
+          <div class="bg-rose-50 border border-rose-200 rounded-xl p-3">
+            <span class="text-rose-800 font-bold">全院應付帳款總額</span>
+            <p id="stat-unpaid-total" class="text-xl font-black text-rose-700 mt-1">NT$ 0</p>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h3 class="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1">📅 2. 各廠商依付款到期月份結餘金額</h3>
+        <div id="supplier-timeline-list" class="space-y-3">
+          <p class="text-center text-xs text-slate-400 py-4">分析中...</p>
+        </div>
+      </div>
+
+      <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+        <h3 class="text-xs font-bold text-slate-800 flex items-center gap-1">📄 3. 每月財務與進貨報表</h3>
+        
+        <div class="flex gap-2 items-center">
+          <input type="month" id="report-month" class="p-2 border border-slate-300 rounded-lg text-xs bg-white font-bold text-slate-700 flex-1">
+          <button onclick="generateMonthlyReport()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-2 rounded-lg text-xs">🔍 生成報表</button>
+        </div>
+
+        <div id="report-result-box" class="hidden space-y-3 pt-2 border-t border-slate-200">
+          <div id="printable-report" class="bg-white p-4 rounded-xl border border-slate-200 space-y-3 text-xs">
+            <div class="border-b pb-2 text-center">
+              <h2 id="report-title" class="text-base font-bold text-slate-800">愛欣診所 - 月度財務報表</h2>
+              <p id="report-period" class="text-[10px] text-slate-500"></p>
+            </div>
+            
+            <div class="grid grid-cols-3 gap-2 text-center">
+              <div class="bg-emerald-50 p-2 rounded">
+                <span class="text-[10px] text-emerald-700">總收入</span>
+                <p id="rep-income" class="font-bold text-emerald-700 text-sm">NT$ 0</p>
+              </div>
+              <div class="bg-rose-50 p-2 rounded">
+                <span class="text-[10px] text-rose-700">零用金支出</span>
+                <p id="rep-expense" class="font-bold text-rose-700 text-sm">NT$ 0</p>
+              </div>
+              <div class="bg-blue-50 p-2 rounded">
+                <span class="text-[10px] text-blue-700">進貨總額</span>
+                <p id="rep-delivery" class="font-bold text-blue-700 text-sm">NT$ 0</p>
+              </div>
+            </div>
+
+            <div>
+              <p class="font-bold text-slate-700 mb-1">各廠商進貨小計：</p>
+              <ul id="rep-supplier-breakdown" class="space-y-1 text-[11px] text-slate-600 pl-2"></ul>
+            </div>
+          </div>
+
+          <div class="flex gap-2">
+            <button onclick="window.print()" class="flex-1 bg-slate-800 text-white font-bold py-2 rounded-lg text-xs">🖨️ 列印報表</button>
+            <button onclick="exportCsvReport()" class="flex-1 bg-emerald-600 text-white font-bold py-2 rounded-lg text-xs">📥 匯出 CSV Excel 檔</button>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h3 class="text-xs font-bold text-slate-700 mb-2">💵 待付款項目核銷明細</h3>
+        <div id="admin-data-list" class="space-y-2">
+          <p class="text-center text-xs text-slate-400 py-4">載入中...</p>
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <!-- 發票補登 Modal 彈窗 -->
+  <div id="invoice-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50 overflow-y-auto">
+    <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl my-auto">
+      <div class="flex justify-between items-center mb-3">
+        <h3 class="text-sm font-bold text-slate-800">📝 補登發票與金額</h3>
+        <button onclick="closeInvoiceModal()" class="text-slate-400 font-bold p-1">✕</button>
+      </div>
+
+      <div class="mb-3 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center space-y-2">
+        <label class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer text-center shadow-sm w-full">
+          📸 拍照發票左側 QR Code 辨識
+          <input type="file" id="modal-qr-file" accept="image/*" class="hidden" onchange="decodeQrFromFile(this, 'modal-invoice-no', 'modal-amount')">
+        </label>
+      </div>
+
+      <form id="modal-invoice-form" class="space-y-3">
+        <input type="hidden" id="modal-id">
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1">發票號碼</label>
+          <input type="text" id="modal-invoice-no" placeholder="例：AB12345678" class="w-full p-2 border rounded-lg text-xs font-mono" required>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1">發票實際總金額 (NT$)</label>
+          <input type="number" id="modal-amount" placeholder="0" class="w-full p-2 border rounded-lg text-xs" required>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1">預計付款到期日</label>
+          <input type="date" id="modal-due-date" class="w-full p-2 border rounded-lg text-xs" required>
+        </div>
+        <div class="flex gap-2 pt-2">
+          <button type="button" onclick="closeInvoiceModal()" class="flex-1 bg-slate-100 text-slate-600 font-bold py-2 rounded-xl text-xs">取消</button>
+          <button type="submit" id="modal-submit-btn" class="flex-1 bg-blue-600 text-white font-bold py-2 rounded-xl text-xs">儲存送出</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <script>
-    // 使用 ZXing 庫進行離線靜態圖片解析，解決鏡頭閃爍問題
-    async function handleFileQr(input, noId, amtId) {
-        if (!input.files || input.files.length === 0) return;
-        const file = input.files[0];
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            const img = new Image();
-            img.onload = async () => {
-                const codeReader = new ZXing.BrowserMultiFormatReader();
-                try {
-                    const result = await codeReader.decodeFromImage(img);
-                    const parsed = parseInvoiceQr(result.text);
-                    if (parsed) {
-                        document.getElementById(noId).value = parsed.invoiceNo;
-                        if (parsed.amount) document.getElementById(amtId).value = parsed.amount;
-                        alert('✅ 辨識成功！');
-                    } else {
-                        alert('⚠️ 讀取成功但非電子發票格式，請手動確認資訊。');
-                    }
-                } catch (err) {
-                    alert('⚠️ 無法辨識圖片中的條碼，請確認發票清晰度。');
-                }
-            };
-            img.src = e.target.result;
-        };
-        reader.readAsDataURL(file);
+    const LIFF_ID = '2011071479-1rEMTEv0'; 
+    const SUPABASE_URL = 'https://bvbknaaljuwxrzvoqcrt.supabase.co'; 
+    const SUPABASE_ANON_KEY = 'sb_publishable_fPdr9TBzrw9Ycb6GEpF7UA_zeLqblfo'; 
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let currentUser = { lineUserId: '', displayName: '匿名同仁' };
+    let cachedAllData = [];
+
+    function openSubPage(page) {
+      document.getElementById('sec-main-menu').classList.add('hidden');
+      document.getElementById('sub-page-header').classList.remove('hidden');
+
+      const titles = {
+        'register': '現場進貨 / 零用金登記',
+        'invoice': '櫃檯 / 會計發票補登',
+        'admin': '院長 / 財務統計與月報表'
+      };
+      document.getElementById('sub-page-title').innerText = titles[page];
+
+      ['register', 'invoice', 'admin'].forEach(p => {
+        document.getElementById(`sec-${p}`).classList.add('hidden');
+      });
+
+      document.getElementById(`sec-${page}`).classList.remove('hidden');
+
+      if (page === 'invoice') loadPendingInvoices();
+      if (page === 'admin') {
+        const today = new Date();
+        document.getElementById('report-month').value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+        loadAdminData();
+      }
     }
 
-    function parseInvoiceQr(text) {
-        if (!text || text.length < 10) return null;
-        const invNo = text.substring(0, 10);
-        if (!/^[A-Z]{2}\d{8}$/i.test(invNo)) return null;
-        let amt = null;
-        if (text.length >= 37) {
-            const hex = text.substring(29, 37);
-            const val = parseInt(hex, 16);
-            if (!isNaN(val) && val > 0) amt = val;
-        }
-        return { invoiceNo: invNo.toUpperCase(), amount: amt };
+    function backToMainMenu() {
+      ['register', 'invoice', 'admin'].forEach(p => {
+        document.getElementById(`sec-${p}`).classList.add('hidden');
+      });
+      document.getElementById('sub-page-header').classList.add('hidden');
+      document.getElementById('sec-main-menu').classList.remove('hidden');
     }
-    
-    // 原有 openSubPage, backToMainMenu, etc. 邏輯保持不變...
+
+    const categoryOptions = {
+      expense: ['文具雜項', '清潔衛生用品', '餐飲茶水', '郵資快遞', '車資旅費', '維修保養', '其他零用金支出'],
+      income: ['自費門診收入', '自費衛材收入', '洗腎相關自費', '其他收入']
+    };
+
+    function updateFormMode() {
+      const type = document.querySelector('input[name="type"]:checked').value;
+      const supplierGroup = document.getElementById('supplier-group');
+      const categoryGroup = document.getElementById('category-group');
+      const deliveryDocSection = document.getElementById('delivery-doc-mode-section');
+
+      if (type === 'delivery' || type === 'pharma') {
+        supplierGroup.classList.remove('hidden');
+        categoryGroup.classList.add('hidden');
+        deliveryDocSection.classList.remove('hidden');
+        toggleDocMode();
+      } else {
+        supplierGroup.classList.add('hidden');
+        categoryGroup.classList.remove('hidden');
+        deliveryDocSection.classList.add('hidden');
+
+        const categorySelect = document.getElementById('category');
+        categorySelect.innerHTML = '';
+        categoryOptions[type].forEach(item => {
+          const opt = document.createElement('option');
+          opt.value = item;
+          opt.innerText = item;
+          categorySelect.appendChild(opt);
+        });
+      }
+    }
+
+    function toggleDocMode() {
+      const mode = document.querySelector('input[name="doc_mode"]:checked')?.value || 'receipt_only';
+      const receiptBox = document.getElementById('doc-receipt-box');
+      const invoiceBox = document.getElementById('doc-invoice-box');
+      const receiptInput = document.getElementById('receipt');
+
+      if (mode === 'receipt_only') {
+        receiptBox.classList.remove('hidden');
+        invoiceBox.classList.add('hidden');
+        receiptInput.required = true;
+      } else {
+        receiptBox.classList.add('hidden');
+        invoiceBox.classList.remove('hidden');
+        receiptInput.required = false;
+      }
+    }
+
+    async function initLiff() {
+      try {
+        await liff.init({ liffId: LIFF_ID });
+        if (!liff.isLoggedIn()) {
+          liff.login();
+        } else {
+          const profile = await liff.getProfile();
+          currentUser.lineUserId = profile.userId;
+          currentUser.displayName = profile.displayName;
+          document.getElementById('user-name').innerText = currentUser.displayName;
+        }
+      } catch (err) {
+        document.getElementById('user-name').innerText = "訪客模式 / 測試中";
+      }
+    }
+
+    updateFormMode();
+    initLiff();
+
+    async function checkDuplicateInvoiceNo(invoiceNo, excludeId = null) {
+      if (!invoiceNo) return 0;
+      let query = supabaseClient.from('cash_log').select('id', { count: 'exact' }).eq('invoice_no', invoiceNo.trim().toUpperCase());
+      if (excludeId) query = query.neq('id', excludeId);
+      const { count } = await query;
+      return count || 0;
+    }
+
+    // 解析台灣電子發票文字
+    function parseInvoiceQr(decodedText) {
+      if (!decodedText || decodedText.length < 10) return null;
+      
+      const invNo = decodedText.substring(0, 10);
+      if (!/^[A-Z]{2}\d{8}$/i.test(invNo)) return null;
+
+      let parsedAmount = null;
+      if (decodedText.length >= 37) {
+        const hexStr = decodedText.substring(29, 37);
+        const val = parseInt(hexStr, 16);
+        if (!isNaN(val) && val > 0 && val < 50000000) parsedAmount = val;
+      }
+      return { invoiceNo: invNo.toUpperCase(), amount: parsedAmount };
+    }
+
+    // 拍照圖片上傳解析（不閃爍且最穩定）
+    async function decodeQrFromFile(inputElem, targetNoId, targetAmtId) {
+      if (!inputElem.files || inputElem.files.length === 0) return;
+      const file = inputElem.files[0];
+
+      try {
+        const html5Qr = new Html5Qrcode("pending-invoice-list");
+        const decodedText = await html5Qr.scanFile(file, false);
+        const res = parseInvoiceQr(decodedText);
+
+        if (res) {
+          document.getElementById(targetNoId).value = res.invoiceNo;
+          if (res.amount) document.getElementById(targetAmtId).value = res.amount;
+
+          const dupCount = await checkDuplicateInvoiceNo(res.invoiceNo);
+          if (dupCount > 0) {
+            alert(`⚠️ 警告！發票【${res.invoiceNo}】在系統中已存在 ${dupCount} 筆紀錄！`);
+          } else {
+            alert(`✅ 拍照辨識成功！\n發票號碼：${res.invoiceNo}\n金額：${res.amount ? 'NT$ ' + res.amount : '請手動確認金額'}`);
+          }
+        } else {
+          alert('⚠️ 照片中讀取到的文字非電子發票，請重新拍照對準發票「左側」的 QR Code。');
+        }
+      } catch (err) {
+        alert('⚠️ 無法解析發票 QR Code，請確認照片清晰、無強光反射，並對準左側 QR Code 拍照。');
+      } finally {
+        inputElem.value = '';
+      }
+    }
+
+    document.getElementById('cash-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const submitBtn = document.getElementById('submit-btn');
+      submitBtn.disabled = true;
+      submitBtn.innerText = "處理中...";
+
+      try {
+        const type = document.querySelector('input[name="type"]:checked').value;
+        const note = document.getElementById('note').value;
+        let supplier = null;
+        let category = null;
+        let amount = 0;
+        let invoiceNo = null;
+        let status = 'paid';
+        let receiptUrl = null;
+
+        if (type === 'delivery' || type === 'pharma') {
+          supplier = document.getElementById('supplier').value;
+          category = type === 'delivery' ? '衛材進貨點收' : '藥品進貨點收';
+          const docMode = document.querySelector('input[name="doc_mode"]:checked').value;
+          
+          if (docMode === 'has_invoice') {
+            invoiceNo = document.getElementById('reg-invoice-no').value.trim().toUpperCase();
+            amount = parseFloat(document.getElementById('amount').value) || 0;
+            status = 'unpaid';
+
+            if (!invoiceNo) {
+              alert('⚠️ 請輸入或拍照辨識發票號碼！');
+              submitBtn.disabled = false;
+              submitBtn.innerText = "確認點收並送出";
+              return;
+            }
+
+            const dupCount = await checkDuplicateInvoiceNo(invoiceNo);
+            if (dupCount > 0) {
+              const confirmDup = confirm(`🚨 重複發票警示！\n\n發票號碼【${invoiceNo}】已存在 ${dupCount} 筆紀錄。\n確定要重複建立嗎？`);
+              if (!confirmDup) {
+                submitBtn.disabled = false;
+                submitBtn.innerText = "確認點收並送出";
+                return;
+              }
+            }
+          } else {
+            status = 'pending_invoice';
+            const receiptFile = document.getElementById('receipt').files[0];
+            if (receiptFile) {
+              const fileExt = receiptFile.name.split('.').pop();
+              const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+              const filePath = `receipts/${fileName}`;
+              await supabaseClient.storage.from('receipts').upload(filePath, receiptFile);
+              const { data: urlData } = supabaseClient.storage.from('receipts').getPublicUrl(filePath);
+              receiptUrl = urlData.publicUrl;
+            }
+          }
+        } else {
+          category = document.getElementById('category').value;
+          amount = parseFloat(document.getElementById('amount').value) || 0;
+          const receiptFile = document.getElementById('receipt').files[0];
+          if (receiptFile) {
+            const fileExt = receiptFile.name.split('.').pop();
+            const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+            const filePath = `receipts/${fileName}`;
+            await supabaseClient.storage.from('receipts').upload(filePath, receiptFile);
+            const { data: urlData } = supabaseClient.storage.from('receipts').getPublicUrl(filePath);
+            receiptUrl = urlData.publicUrl;
+          }
+        }
+
+        const today = new Date();
+        const defaultDueDate = new Date(today.getFullYear(), today.getMonth() + 2, 0).toISOString().split('T')[0];
+
+        await supabaseClient.from('cash_log').insert([{
+          line_user_id: currentUser.lineUserId || 'UNKNOWN',
+          user_name: currentUser.displayName,
+          type: type,
+          supplier: supplier,
+          category: category,
+          amount: amount,
+          invoice_no: invoiceNo,
+          payment_due_date: (status === 'unpaid') ? defaultDueDate : null,
+          receipt_url: receiptUrl,
+          note: note,
+          status: status
+        }]);
+
+        alert((type === 'delivery' || type === 'pharma') ? ((status === 'unpaid') ? '✅ 隨貨發票進貨已登記！已歸入院長待付款。' : '✅ 簽收單已上傳！已進入櫃檯待補發票。') : '✅ 登記成功！');
+        document.getElementById('cash-form').reset();
+        document.getElementById('reg-invoice-no').value = '';
+        updateFormMode();
+      } catch (err) {
+        alert('❌ 失敗：' + err.message);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerText = "確認點收並送出";
+      }
+    });
+
+    async function loadPendingInvoices() {
+      const container = document.getElementById('pending-invoice-list');
+      container.innerHTML = '<p class="text-center text-xs text-slate-400 py-4">載入中...</p>';
+      const { data } = await supabaseClient.from('cash_log').select('*').eq('status', 'pending_invoice').order('created_at', { ascending: false });
+
+      if (!data || data.length === 0) {
+        container.innerHTML = '<p class="text-center text-xs text-slate-400 py-6">🎉 無待補發票的進貨紀錄！</p>';
+        return;
+      }
+
+      container.innerHTML = '';
+      data.forEach(item => {
+        const div = document.createElement('div');
+        div.className = "bg-slate-50 border p-3 rounded-xl space-y-2 text-xs";
+        div.innerHTML = `
+          <div class="flex justify-between font-bold text-slate-800">
+            <span class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded">${item.category || '進貨'}</span>
+            <span class="text-slate-500">${item.supplier || '未指定廠商'}</span>
+          </div>
+          <p class="text-slate-600">說明：${item.note || '無'}</p>
+          ${item.receipt_url ? `<a href="${item.receipt_url}" target="_blank" class="text-blue-600 underline font-bold inline-block">📄 查看簽收單照片</a>` : ''}
+          <button onclick="openInvoiceModal('${item.id}')" class="w-full bg-amber-500 text-white font-bold py-2 rounded-lg text-xs shadow-sm">📝 補登發票與金額</button>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function openInvoiceModal(id) {
+      document.getElementById('modal-id').value = id;
+      document.getElementById('modal-invoice-no').value = '';
+      document.getElementById('modal-amount').value = '';
+      const today = new Date();
+      document.getElementById('modal-due-date').value = new Date(today.getFullYear(), today.getMonth() + 2, 0).toISOString().split('T')[0];
+      document.getElementById('invoice-modal').classList.remove('hidden');
+    }
+
+    function closeInvoiceModal() {
+      document.getElementById('invoice-modal').classList.add('hidden');
+    }
+
+    document.getElementById('modal-invoice-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('modal-id').value;
+      const invoiceNo = document.getElementById('modal-invoice-no').value.trim().toUpperCase();
+      const amount = parseFloat(document.getElementById('modal-amount').value);
+
+      const dupCount = await checkDuplicateInvoiceNo(invoiceNo, id);
+      if (dupCount > 0) {
+        const confirmDup = confirm(`🚨 重複發票警示！\n\n發票號碼【${invoiceNo}】已存在 ${dupCount} 筆紀錄。\n確定儲存嗎？`);
+        if (!confirmDup) return;
+      }
+
+      await supabaseClient.from('cash_log').update({
+        invoice_no: invoiceNo,
+        amount: amount,
+        payment_due_date: document.getElementById('modal-due-date').value,
+        status: 'unpaid'
+      }).eq('id', id);
+
+      alert('✅ 發票與金額已成功補登！');
+      closeInvoiceModal();
+      loadPendingInvoices();
+    });
+
+    async function loadAdminData() {
+      const { data, error } = await supabaseClient.from('cash_log').select('*').order('created_at', { ascending: false });
+      if (error) { alert('資料載入失敗'); return; }
+
+      cachedAllData = data || [];
+
+      const pendingItems = cachedAllData.filter(d => d.status === 'pending_invoice');
+      const unpaidItems = cachedAllData.filter(d => d.status === 'unpaid');
+
+      document.getElementById('stat-pending-count').innerText = `${pendingItems.length} 筆`;
+      
+      const unpaidTotal = unpaidItems.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+      document.getElementById('stat-unpaid-total').innerText = `NT$ ${unpaidTotal.toLocaleString()}`;
+
+      renderSupplierTimeline(unpaidItems);
+      renderAdminUnpaidList(unpaidItems);
+    }
+
+    function renderSupplierTimeline(unpaidItems) {
+      const timelineContainer = document.getElementById('supplier-timeline-list');
+      if (unpaidItems.length === 0) {
+        timelineContainer.innerHTML = '<p class="text-center text-xs text-slate-400 py-4">🎉 目前無未結餘應付帳款</p>';
+        return;
+      }
+
+      const grouped = {};
+      unpaidItems.forEach(item => {
+        const monthKey = item.payment_due_date ? item.payment_due_date.substring(0, 7) : '未指定月份';
+        const supplierKey = item.supplier || '未指定廠商';
+        const amt = Number(item.amount) || 0;
+
+        if (!grouped[monthKey]) grouped[monthKey] = {};
+        grouped[monthKey][supplierKey] = (grouped[monthKey][supplierKey] || 0) + amt;
+      });
+
+      const sortedMonths = Object.keys(grouped).sort();
+
+      timelineContainer.innerHTML = '';
+      sortedMonths.forEach(month => {
+        const monthBox = document.createElement('div');
+        monthBox.className = "bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 text-xs";
+        
+        let monthTotal = 0;
+        let supplierRows = '';
+        
+        Object.entries(grouped[month]).forEach(([supplier, sum]) => {
+          monthTotal += sum;
+          supplierRows += `
+            <li class="flex justify-between items-center py-1 border-b border-slate-100 last:border-0">
+              <span class="text-slate-700 font-medium">${supplier}</span>
+              <span class="font-bold text-slate-900">NT$ ${sum.toLocaleString()}</span>
+            </li>
+          `;
+        });
+
+        monthBox.innerHTML = `
+          <div class="flex justify-between items-center border-b pb-1.5 border-slate-200">
+            <span class="font-bold text-blue-900 bg-blue-100 px-2 py-0.5 rounded">🗓️ 付款到期月份：${month}</span>
+            <span class="font-black text-rose-600 text-sm">小計：NT$ ${monthTotal.toLocaleString()}</span>
+          </div>
+          <ul class="pl-1">
+            ${supplierRows}
+          </ul>
+        `;
+        timelineContainer.appendChild(monthBox);
+      });
+    }
+
+    function renderAdminUnpaidList(unpaidItems) {
+      const container = document.getElementById('admin-data-list');
+      if (unpaidItems.length === 0) {
+        container.innerHTML = '<p class="text-center text-xs text-slate-400 py-4">無待核銷項目</p>';
+        return;
+      }
+
+      container.innerHTML = '';
+      unpaidItems.forEach(item => {
+        const div = document.createElement('div');
+        div.className = "bg-slate-50 border border-slate-200 p-3 rounded-xl space-y-2 text-xs";
+        div.innerHTML = `
+          <div class="flex justify-between font-bold text-slate-800">
+            <span>${item.supplier || item.category}</span>
+            <span class="text-rose-600 font-black">NT$ ${Number(item.amount).toLocaleString()}</span>
+          </div>
+          <p class="text-slate-600">發票號碼：<span class="font-mono bg-slate-200 px-1 rounded text-slate-800">${item.invoice_no || '未設定'}</span></p>
+          <p class="text-slate-600">到期日：<span class="font-bold text-rose-600">${item.payment_due_date || '未設定'}</span></p>
+          ${item.receipt_url ? `<a href="${item.receipt_url}" target="_blank" class="text-blue-600 underline font-bold inline-block">📄 查看憑證照片</a>` : ''}
+          <button onclick="markAsPaid('${item.id}')" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 rounded-lg text-xs shadow-sm">💵 完成付款與核銷</button>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function generateMonthlyReport() {
+      const targetMonth = document.getElementById('report-month').value;
+      if (!targetMonth) { alert('請選擇要生成的月份'); return; }
+
+      const monthData = cachedAllData.filter(d => {
+        const dateStr = d.created_at ? d.created_at.substring(0, 7) : '';
+        const dueStr = d.payment_due_date ? d.payment_due_date.substring(0, 7) : '';
+        return dateStr === targetMonth || dueStr === targetMonth;
+      });
+
+      let totalIncome = 0;
+      let totalExpense = 0;
+      let totalDelivery = 0;
+      const supplierSums = {};
+
+      monthData.forEach(d => {
+        const amt = Number(d.amount) || 0;
+        if (d.type === 'income') totalIncome += amt;
+        if (d.type === 'expense') totalExpense += amt;
+        if (d.type === 'delivery' || d.type === 'pharma') {
+          totalDelivery += amt;
+          const sup = d.supplier || '其他廠商';
+          supplierSums[sup] = (supplierSums[sup] || 0) + amt;
+        }
+      });
+
+      document.getElementById('report-title').innerText = `愛欣診所 - ${targetMonth} 財務月報表`;
+      document.getElementById('report-period').innerText = `報表月份：${targetMonth} | 統計筆數：${monthData.length} 筆`;
+      document.getElementById('rep-income').innerText = `NT$ ${totalIncome.toLocaleString()}`;
+      document.getElementById('rep-expense').innerText = `NT$ ${totalExpense.toLocaleString()}`;
+      document.getElementById('rep-delivery').innerText = `NT$ ${totalDelivery.toLocaleString()}`;
+
+      const breakdownList = document.getElementById('rep-supplier-breakdown');
+      breakdownList.innerHTML = '';
+      if (Object.keys(supplierSums).length === 0) {
+        breakdownList.innerHTML = '<li>該月份無進貨紀錄</li>';
+      } else {
+        Object.entries(supplierSums).forEach(([sup, sum]) => {
+          const li = document.createElement('li');
+          li.className = "flex justify-between border-b border-slate-100 py-0.5";
+          li.innerHTML = `<span>${sup}</span><span class="font-bold">NT$ ${sum.toLocaleString()}</span>`;
+          breakdownList.appendChild(li);
+        });
+      }
+
+      document.getElementById('report-result-box').classList.remove('hidden');
+    }
+
+    function exportCsvReport() {
+      const targetMonth = document.getElementById('report-month').value;
+      const monthData = cachedAllData.filter(d => {
+        const dateStr = d.created_at ? d.created_at.substring(0, 7) : '';
+        return dateStr === targetMonth;
+      });
+
+      if (monthData.length === 0) { alert('該月份無資料可匯出'); return; }
+
+      let csvContent = "\uFEFF建立時間,登記類型,廠商/分類,金額,發票號碼,到期日,備註,狀態\n";
+      monthData.forEach(d => {
+        csvContent += `"${d.created_at || ''}","${d.type || ''}","${d.supplier || d.category || ''}","${d.amount || 0}","${d.invoice_no || ''}","${d.payment_due_date || ''}","${d.note || ''}","${d.status || ''}"\n`;
+      });
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `愛欣診所財務月報_${targetMonth}.csv`;
+      link.click();
+    }
+
+    async function markAsPaid(id) {
+      if (!confirm('確認核銷已付款嗎？')) return;
+      await supabaseClient.from('cash_log').update({ status: 'paid' }).eq('id', id);
+      alert('✅ 已成功結案核銷！');
+      loadAdminData();
+    }
   </script>
 </body>
 </html>
