@@ -1,10 +1,9 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>愛欣診所 - 金流與零用金登記</title>
+  <title>愛欣診所 - 進貨點收與零用金登記</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -17,7 +16,7 @@
       <h1 class="text-2xl font-bold text-slate-800 flex items-center justify-center gap-2">
         🏥 愛欣診所管理系統
       </h1>
-      <p class="text-sm text-slate-500 mt-1">金流與零用金即時登記</p>
+      <p class="text-sm text-slate-500 mt-1">進貨點收 / 零用金 / 自費登記</p>
     </div>
 
     <!-- 登記人員資訊 -->
@@ -31,98 +30,115 @@
       
       <!-- 1. 交易類型選擇 -->
       <div>
-        <label class="block text-sm font-semibold text-slate-700 mb-2">交易類型</label>
-        <div class="grid grid-cols-2 gap-3">
-          <label class="flex items-center justify-center p-3 border-2 border-emerald-500 bg-emerald-50 text-emerald-800 rounded-xl cursor-pointer hover:bg-emerald-100 transition font-bold">
-            <input type="radio" name="type" value="income" checked onchange="updateCategories()" class="w-4 h-4 text-emerald-600 mr-2">
-            💰 收入
+        <label class="block text-sm font-semibold text-slate-700 mb-2">登記類型</label>
+        <div class="grid grid-cols-3 gap-2">
+          <label class="flex flex-col items-center justify-center p-2.5 border-2 border-blue-500 bg-blue-50 text-blue-800 rounded-xl cursor-pointer font-bold text-xs text-center">
+            <input type="radio" name="type" value="delivery" checked onchange="updateFormMode()" class="mb-1">
+            📦 衛材進貨
           </label>
-          <label class="flex items-center justify-center p-3 border-2 border-rose-500 bg-rose-50 text-rose-800 rounded-xl cursor-pointer hover:bg-rose-100 transition font-bold">
-            <input type="radio" name="type" value="expense" onchange="updateCategories()" class="w-4 h-4 text-rose-600 mr-2">
-            💸 支出
+          <label class="flex flex-col items-center justify-center p-2.5 border-2 border-rose-500 bg-rose-50 text-rose-800 rounded-xl cursor-pointer font-bold text-xs text-center">
+            <input type="radio" name="type" value="expense" onchange="updateFormMode()" class="mb-1">
+            💸 零用金支出
+          </label>
+          <label class="flex flex-col items-center justify-center p-2.5 border-2 border-emerald-500 bg-emerald-50 text-emerald-800 rounded-xl cursor-pointer font-bold text-xs text-center">
+            <input type="radio" name="type" value="income" onchange="updateFormMode()" class="mb-1">
+            💰 自費收入
           </label>
         </div>
       </div>
 
-      <!-- 2. 金流分類動態選單 -->
-      <div>
-        <label class="block text-sm font-semibold text-slate-700 mb-2">金流分類</label>
-        <select id="category" class="w-full p-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" required>
-          <!-- 會由 JavaScript 自動寫入選項 -->
+      <!-- 廠商名稱 (僅衛材進貨顯示) -->
+      <div id="supplier-group">
+        <label class="block text-sm font-semibold text-slate-700 mb-2">進貨廠商</label>
+        <select id="supplier" class="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white">
+          <option value="台灣百特 (Baxter)">台灣百特 (Baxter)</option>
+          <option value="台灣費森尤斯 (Fresenius)">台灣費森尤斯 (Fresenius)</option>
+          <option value="濟生醫藥">濟生醫藥</option>
+          <option value="杏昌生技">杏昌生技</option>
+          <option value="其他廠商/藥局">其他廠商/藥局</option>
         </select>
       </div>
 
-      <!-- 3. 金額輸入 -->
-      <div>
-        <label class="block text-sm font-semibold text-slate-700 mb-2">金額 (NT$)</label>
-        <input type="number" id="amount" min="1" placeholder="0" class="w-full p-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+      <!-- 金流分類 (支出/收入時顯示) -->
+      <div id="category-group" class="hidden">
+        <label class="block text-sm font-semibold text-slate-700 mb-2">分類項目</label>
+        <select id="category" class="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 bg-white">
+        </select>
       </div>
 
-      <!-- 4. 上傳照片 -->
+      <!-- 金額輸入 (進貨時可留空或輸入0) -->
       <div>
-        <label class="block text-sm font-semibold text-slate-700 mb-2">上傳發票/收據照片</label>
-        <input type="file" id="receipt" accept="image/*" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-        <p class="text-xs text-slate-400 mt-1">點擊可直接開啟手機相機拍照。</p>
+        <label id="amount-label" class="block text-sm font-semibold text-slate-700 mb-2">金額 (NT$) <span id="amount-optional" class="text-xs text-slate-400 font-normal">(若單據無金額可留空)</span></label>
+        <input type="number" id="amount" min="0" placeholder="0" class="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500">
       </div>
 
-      <!-- 5. 備註欄位 -->
+      <!-- 上傳照片 -->
       <div>
-        <label class="block text-sm font-semibold text-slate-700 mb-2">備註說明</label>
-        <textarea id="note" rows="2" placeholder="例如：購買洗腎室消毒用酒精2罐" class="w-full p-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+        <label id="photo-label" class="block text-sm font-semibold text-slate-700 mb-2">拍照上傳簽收單 / 送貨單</label>
+        <input type="file" id="receipt" accept="image/*" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" required>
+        <p class="text-xs text-slate-400 mt-1">請拍攝清楚帶有品項與數量的簽收單憑證。</p>
+      </div>
+
+      <!-- 備註說明 -->
+      <div>
+        <label class="block text-sm font-semibold text-slate-700 mb-2">備註 / 進貨品項簡述</label>
+        <textarea id="note" rows="2" placeholder="例如：透析液 10 箱、A管路 2 盒 (若無數量寫簽收)" class="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500"></textarea>
       </div>
 
       <!-- 送出按鈕 -->
       <button type="submit" id="submit-btn" class="w-full bg-blue-600 text-white font-bold py-3.5 px-4 rounded-xl shadow-md hover:bg-blue-700 active:scale-[0.98] transition duration-150">
-        確認登記送出
+        確認點收並送出
       </button>
     </form>
   </div>
 
   <script>
-    // ==================== 【設定參數】 ====================
+    // 設定參數
     const LIFF_ID = '2011071479-1rEMTEv0'; 
     const SUPABASE_URL = 'https://bvbknaaljuwxrzvoqcrt.supabase.co'; 
     const SUPABASE_ANON_KEY = 'sb_publishable_fPdr9TBzrw9Ycb6GEpF7UA_zeLqblfo'; 
-    // ====================================================
 
-    // 分類選單資料設定
     const categoryOptions = {
-      income: [
-        '自費門診收入',
-        '自費衛材收入',
-        '洗腎相關自費',
-        '其他收入'
-      ],
-      expense: [
-        '文具雜項',
-        '清潔衛生用品',
-        '餐飲茶水',
-        '郵資快遞',
-        '車資旅費',
-        '維修保養',
-        '其他零用金支出'
-      ]
+      expense: ['文具雜項', '清潔衛生用品', '餐飲茶水', '郵資快遞', '車資旅費', '維修保養', '其他零用金支出'],
+      income: ['自費門診收入', '自費衛材收入', '洗腎相關自費', '其他收入']
     };
 
-    // 動態更新分類選單
-    function updateCategories() {
+    function updateFormMode() {
       const type = document.querySelector('input[name="type"]:checked').value;
-      const categorySelect = document.getElementById('category');
-      categorySelect.innerHTML = '';
+      const supplierGroup = document.getElementById('supplier-group');
+      const categoryGroup = document.getElementById('category-group');
+      const amountLabel = document.getElementById('amount-label');
+      const amountOptional = document.getElementById('amount-optional');
+      const photoLabel = document.getElementById('photo-label');
+      const amountInput = document.getElementById('amount');
 
-      categoryOptions[type].forEach(item => {
-        const option = document.createElement('option');
-        option.value = item;
-        option.innerText = item;
-        categorySelect.appendChild(option);
-      });
+      if (type === 'delivery') {
+        supplierGroup.classList.remove('hidden');
+        categoryGroup.classList.add('hidden');
+        amountOptional.classList.remove('hidden');
+        amountInput.required = false;
+        photoLabel.innerText = "拍照上傳簽收單 / 送貨單";
+      } else {
+        supplierGroup.classList.add('hidden');
+        categoryGroup.classList.remove('hidden');
+        amountOptional.classList.add('hidden');
+        amountInput.required = true;
+        photoLabel.innerText = "拍照上傳發票 / 收據照片";
+
+        const categorySelect = document.getElementById('category');
+        categorySelect.innerHTML = '';
+        categoryOptions[type].forEach(item => {
+          const opt = document.createElement('option');
+          opt.value = item;
+          opt.innerText = item;
+          categorySelect.appendChild(opt);
+        });
+      }
     }
 
-    // 初始化 Supabase
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     let currentUser = { lineUserId: '', displayName: '匿名同仁' };
 
-    // 初始化 LINE LIFF
     async function initLiff() {
       try {
         await liff.init({ liffId: LIFF_ID });
@@ -135,39 +151,48 @@
           document.getElementById('user-name').innerText = currentUser.displayName;
         }
       } catch (err) {
-        console.error("LIFF 初始化失敗:", err);
         document.getElementById('user-name').innerText = "訪客模式 / 測試中";
         currentUser.lineUserId = "TEST_USER_123";
       }
     }
 
-    // 啟動頁面選單與 LIFF
-    updateCategories();
+    updateFormMode();
     initLiff();
 
-    // 表單提交處理
     document.getElementById('cash-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const submitBtn = document.getElementById('submit-btn');
       submitBtn.disabled = true;
-      submitBtn.innerText = "資料處理解析中...";
+      submitBtn.innerText = "資料處理中...";
 
       try {
         const type = document.querySelector('input[name="type"]:checked').value;
-        const category = document.getElementById('category').value;
-        const amount = parseFloat(document.getElementById('amount').value);
+        const amountVal = document.getElementById('amount').value;
+        const amount = amountVal ? parseFloat(amountVal) : 0;
         const note = document.getElementById('note').value;
         const receiptFile = document.getElementById('receipt').files[0];
 
-        let receiptUrl = null;
+        let supplier = null;
+        let category = null;
+        let status = 'pending';
 
+        if (type === 'delivery') {
+          supplier = document.getElementById('supplier').value;
+          category = '衛材進貨點收';
+          status = 'pending_invoice'; // 標記為待補發票狀態
+        } else {
+          category = document.getElementById('category').value;
+          status = 'paid';
+        }
+
+        let receiptUrl = null;
         if (receiptFile) {
-          submitBtn.innerText = "照片上傳中...";
+          submitBtn.innerText = "照片憑證上傳中...";
           const fileExt = receiptFile.name.split('.').pop();
           const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
           const filePath = `receipts/${fileName}`;
 
-          const { data: uploadData, error: uploadError } = await supabaseClient.storage
+          const { error: uploadError } = await supabaseClient.storage
             .from('receipts')
             .upload(filePath, receiptFile);
 
@@ -178,26 +203,25 @@
         }
 
         submitBtn.innerText = "寫入資料庫中...";
-        const { data, error } = await supabaseClient
+        const { error } = await supabaseClient
           .from('cash_log')
-          .insert([
-            {
-              line_user_id: currentUser.lineUserId || 'UNKNOWN_USER',
-              user_name: currentUser.displayName,
-              type: type,
-              category: category,
-              amount: amount,
-              receipt_url: receiptUrl,
-              note: note,
-              status: 'pending'
-            }
-          ]);
+          .insert([{
+            line_user_id: currentUser.lineUserId || 'UNKNOWN_USER',
+            user_name: currentUser.displayName,
+            type: type,
+            supplier: supplier,
+            category: category,
+            amount: amount,
+            receipt_url: receiptUrl,
+            note: note,
+            status: status
+          }]);
 
         if (error) throw error;
 
-        alert('✅ 登記成功！資料已同步至雲端。');
+        alert(type === 'delivery' ? '✅ 進貨簽收單已上傳！已進入「待補發票與對帳」清單。' : '✅ 登記成功！');
         document.getElementById('cash-form').reset();
-        updateCategories(); // 重置選單狀態
+        updateFormMode();
 
         if (liff.isInClient()) {
           liff.closeWindow();
@@ -208,7 +232,7 @@
         console.error(err);
       } finally {
         submitBtn.disabled = false;
-        submitBtn.innerText = "確認登記送出";
+        submitBtn.innerText = "確認點收並送出";
       }
     });
   </script>
