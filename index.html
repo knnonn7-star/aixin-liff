@@ -13,49 +13,88 @@
 
   <div class="bg-white w-full max-w-xl rounded-2xl shadow-lg p-4 md:p-6 my-auto">
     
-    <!-- 頁頭與身份資訊 -->
+    <!-- 頁頭資訊 -->
     <div class="text-center mb-4">
       <h1 class="text-xl font-bold text-slate-800 flex items-center justify-center gap-2">
         🏥 愛欣診所管理系統
       </h1>
-      <p class="text-xs text-slate-500 mt-0.5">LINE 整合式金流與衛材進貨管理</p>
+      <p class="text-xs text-slate-500 mt-0.5">LINE 整合式金流與進貨管理</p>
     </div>
 
-    <!-- 功能切換頂部導覽列 -->
-    <div class="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl mb-5 border border-slate-200">
-      <button id="nav-register" onclick="switchMainTab('register')" class="py-2 text-xs font-bold rounded-lg bg-blue-600 text-white shadow-sm transition">
-        📦 現場登記
-      </button>
-      <button id="nav-invoice" onclick="switchMainTab('invoice')" class="py-2 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900 transition">
-        📷 櫃檯補登
-      </button>
-      <button id="nav-admin" onclick="switchMainTab('admin')" class="py-2 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900 transition">
-        📊 院長對帳
-      </button>
-    </div>
-
-    <!-- 登記人員標籤 (僅現場登記顯示) -->
+    <!-- 當前使用者標籤 -->
     <div id="user-info-bar" class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 mb-4 flex justify-between items-center text-xs">
       <span class="text-slate-600 font-medium">當前使用者：</span>
       <span id="user-name" class="font-bold text-slate-800 bg-slate-200 px-2.5 py-0.5 rounded-md">載入中...</span>
     </div>
 
-    <!-- ==================== 模組一：現場登記表單 ==================== -->
-    <section id="sec-register" class="space-y-4">
+    <!-- ==================== 第一層：主功能選單入口 ==================== -->
+    <section id="sec-main-menu" class="space-y-3">
+      <p class="text-xs font-bold text-slate-500 text-center mb-2">請選擇您要執行的功能：</p>
+      
+      <button onclick="openSubPage('register')" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold p-4 rounded-2xl shadow-md flex items-center justify-between transition group">
+        <div class="flex items-center gap-3">
+          <span class="text-2xl">📦</span>
+          <div class="text-left">
+            <div class="text-base font-bold">現場進貨 / 零用金登記</div>
+            <div class="text-xs text-blue-100 font-normal">衛材/藥品進貨點收（支援隨貨發票直接掃碼）</div>
+          </div>
+        </div>
+        <span class="text-lg group-hover:translate-x-1 transition-transform">➔</span>
+      </button>
+
+      <button onclick="openSubPage('invoice')" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold p-4 rounded-2xl shadow-md flex items-center justify-between transition group">
+        <div class="flex items-center gap-3">
+          <span class="text-2xl">📷</span>
+          <div class="text-left">
+            <div class="text-base font-bold">櫃檯 / 會計發票補登</div>
+            <div class="text-xs text-amber-100 font-normal">補寄發票對帳（掃碼自動帶入發票與金額）</div>
+          </div>
+        </div>
+        <span class="text-lg group-hover:translate-x-1 transition-transform">➔</span>
+      </button>
+
+      <button onclick="openSubPage('admin')" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold p-4 rounded-2xl shadow-md flex items-center justify-between transition group">
+        <div class="flex items-center gap-3">
+          <span class="text-2xl">📊</span>
+          <div class="text-left">
+            <div class="text-base font-bold">院長 / 應付帳款對帳後台</div>
+            <div class="text-xs text-slate-300 font-normal">查看全院應付帳款總額與月結請款核銷</div>
+          </div>
+        </div>
+        <span class="text-lg group-hover:translate-x-1 transition-transform">➔</span>
+      </button>
+    </section>
+
+    <!-- ==================== 第二層：功能頁面 ==================== -->
+    
+    <!-- 返回首頁按鈕 -->
+    <div id="sub-page-header" class="hidden mb-4 pb-2 border-b border-slate-200 flex justify-between items-center">
+      <button onclick="backToMainMenu()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1">
+        ⬅️ 返回主選單
+      </button>
+      <span id="sub-page-title" class="text-xs font-bold text-slate-600"></span>
+    </div>
+
+    <!-- 1. 現場登記表單 -->
+    <section id="sec-register" class="hidden space-y-4">
       <form id="cash-form" class="space-y-4">
         <div>
           <label class="block text-xs font-bold text-slate-700 mb-1.5">登記類型</label>
-          <div class="grid grid-cols-3 gap-2">
-            <label class="flex flex-col items-center justify-center p-2 border-2 border-blue-500 bg-blue-50 text-blue-800 rounded-xl cursor-pointer font-bold text-xs text-center">
-              <input type="radio" name="type" value="delivery" checked onchange="updateFormMode()" class="mb-1">
+          <div class="grid grid-cols-2 gap-2">
+            <label class="flex items-center justify-center p-2 border-2 border-blue-500 bg-blue-50 text-blue-800 rounded-xl cursor-pointer font-bold text-xs text-center">
+              <input type="radio" name="type" value="delivery" checked onchange="updateFormMode()" class="mr-1.5">
               📦 衛材進貨
             </label>
-            <label class="flex flex-col items-center justify-center p-2 border-2 border-rose-500 bg-rose-50 text-rose-800 rounded-xl cursor-pointer font-bold text-xs text-center">
-              <input type="radio" name="type" value="expense" onchange="updateFormMode()" class="mb-1">
+            <label class="flex items-center justify-center p-2 border-2 border-indigo-500 bg-indigo-50 text-indigo-800 rounded-xl cursor-pointer font-bold text-xs text-center">
+              <input type="radio" name="type" value="pharma" onchange="updateFormMode()" class="mr-1.5">
+              💊 藥品進貨
+            </label>
+            <label class="flex items-center justify-center p-2 border-2 border-rose-500 bg-rose-50 text-rose-800 rounded-xl cursor-pointer font-bold text-xs text-center">
+              <input type="radio" name="type" value="expense" onchange="updateFormMode()" class="mr-1.5">
               💸 零用金支出
             </label>
-            <label class="flex flex-col items-center justify-center p-2 border-2 border-emerald-500 bg-emerald-50 text-emerald-800 rounded-xl cursor-pointer font-bold text-xs text-center">
-              <input type="radio" name="type" value="income" onchange="updateFormMode()" class="mb-1">
+            <label class="flex items-center justify-center p-2 border-2 border-emerald-500 bg-emerald-50 text-emerald-800 rounded-xl cursor-pointer font-bold text-xs text-center">
+              <input type="radio" name="type" value="income" onchange="updateFormMode()" class="mr-1.5">
               💰 自費收入
             </label>
           </div>
@@ -68,7 +107,7 @@
             <option value="台灣費森尤斯 (Fresenius)">台灣費森尤斯 (Fresenius)</option>
             <option value="濟生醫藥">濟生醫藥</option>
             <option value="杏昌生技">杏昌生技</option>
-            <option value="其他廠商/藥局">其他廠商/藥局</option>
+            <option value="合作藥局/其他大藥廠">合作藥局/其他大藥廠</option>
           </select>
         </div>
 
@@ -77,19 +116,38 @@
           <select id="category" class="w-full p-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 bg-white"></select>
         </div>
 
-        <div>
-          <label id="amount-label" class="block text-xs font-bold text-slate-700 mb-1">金額 (NT$) <span id="amount-optional" class="text-xs text-slate-400 font-normal">(若單據無金額可留空)</span></label>
-          <input type="number" id="amount" min="0" placeholder="0" class="w-full p-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500">
+        <!-- 隨貨發票對帳區 (進貨模式顯示) -->
+        <div id="invoice-scan-section" class="bg-blue-50/70 p-3 rounded-xl border border-blue-200 space-y-2">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-bold text-blue-900">🧾 隨貨發票資訊 (若有發票可直接掃描)</span>
+            <span class="text-[10px] bg-blue-200 text-blue-800 px-1.5 py-0.5 rounded">省去後續補登</span>
+          </div>
+
+          <button type="button" onclick="startRegisterScan()" id="reg-scan-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1">
+            📷 掃描隨貨發票 QR Code
+          </button>
+          <div id="reg-reader" class="hidden rounded-lg overflow-hidden border border-slate-300"></div>
+
+          <div class="grid grid-cols-2 gap-2 pt-1">
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">發票號碼</label>
+              <input type="text" id="reg-invoice-no" placeholder="例：AB12345678" class="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono bg-white">
+            </div>
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">發票總金額 (NT$)</label>
+              <input type="number" id="amount" min="0" placeholder="無金額留空" class="w-full p-2 border border-slate-300 rounded-lg text-xs bg-white">
+            </div>
+          </div>
         </div>
 
         <div>
-          <label id="photo-label" class="block text-xs font-bold text-slate-700 mb-1">拍照上傳簽收單 / 送貨單</label>
+          <label id="photo-label" class="block text-xs font-bold text-slate-700 mb-1">拍照上傳簽收單 / 送貨單照片</label>
           <input type="file" id="receipt" accept="image/*" class="w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700" required>
         </div>
 
         <div>
           <label class="block text-xs font-bold text-slate-700 mb-1">備註 / 進貨品項簡述</label>
-          <textarea id="note" rows="2" placeholder="例如：透析液 10 箱" class="w-full p-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500"></textarea>
+          <textarea id="note" rows="2" placeholder="例如：透析液 10 箱，或 EPO 藥品 50 支" class="w-full p-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500"></textarea>
         </div>
 
         <button type="submit" id="submit-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-xl shadow-md hover:bg-blue-700 active:scale-[0.98] transition duration-150 text-sm">
@@ -98,7 +156,7 @@
       </form>
     </section>
 
-    <!-- ==================== 模組二：櫃檯/會計發票補登 ==================== -->
+    <!-- 2. 櫃檯/會計發票補登 -->
     <section id="sec-invoice" class="hidden space-y-3">
       <div class="flex justify-between items-center bg-amber-50 p-3 rounded-xl border border-amber-200 mb-2">
         <span class="text-xs text-amber-800 font-bold">待補發票與對帳專區</span>
@@ -109,7 +167,7 @@
       </div>
     </section>
 
-    <!-- ==================== 模組三：院長/對帳後台 ==================== -->
+    <!-- 3. 院長/對帳後台 -->
     <section id="sec-admin" class="hidden space-y-4">
       <div class="bg-slate-900 text-white p-3 rounded-xl flex justify-between items-center">
         <span class="text-xs font-bold">📊 院長與對帳管理</span>
@@ -140,10 +198,10 @@
       </div>
 
       <div class="mb-3 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center">
-        <button type="button" id="start-scan-btn" onclick="toggleScanner()" class="w-full bg-emerald-600 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-2">
-          📷 掃描電子發票 QR Code
+        <button type="button" id="start-scan-btn" onclick="toggleModalScanner()" class="w-full bg-emerald-600 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-2">
+          📷 開啟鏡頭掃描電子發票 QR Code
         </button>
-        <div id="reader" class="hidden mt-2 rounded-lg overflow-hidden border border-slate-300"></div>
+        <div id="modal-reader" class="hidden mt-2 rounded-lg overflow-hidden border border-slate-300"></div>
       </div>
 
       <form id="modal-invoice-form" class="space-y-3">
@@ -175,25 +233,38 @@
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let currentUser = { lineUserId: '', displayName: '匿名同仁' };
-    let html5QrcodeScanner = null;
+    let activeScanner = null;
 
-    // 導覽頁籤切換
-    function switchMainTab(tab) {
-      ['register', 'invoice', 'admin'].forEach(t => {
-        document.getElementById(`sec-${t}`).classList.add('hidden');
-        const btn = document.getElementById(`nav-${t}`);
-        btn.className = "py-2 text-xs font-bold rounded-lg text-slate-600 transition";
+    function openSubPage(page) {
+      document.getElementById('sec-main-menu').classList.add('hidden');
+      document.getElementById('sub-page-header').classList.remove('hidden');
+
+      const titles = {
+        'register': '現場進貨 / 零用金登記',
+        'invoice': '櫃檯 / 會計發票補登',
+        'admin': '院長 / 應付帳款對帳後台'
+      };
+      document.getElementById('sub-page-title').innerText = titles[page];
+
+      ['register', 'invoice', 'admin'].forEach(p => {
+        document.getElementById(`sec-${p}`).classList.add('hidden');
       });
 
-      document.getElementById(`sec-${tab}`).classList.remove('hidden');
-      document.getElementById(`nav-${tab}`).className = "py-2 text-xs font-bold rounded-lg bg-blue-600 text-white shadow-sm transition";
-      document.getElementById('user-info-bar').classList.toggle('hidden', tab !== 'register');
+      document.getElementById(`sec-${page}`).classList.remove('hidden');
 
-      if (tab === 'invoice') loadPendingInvoices();
-      if (tab === 'admin') loadAdminData();
+      if (page === 'invoice') loadPendingInvoices();
+      if (page === 'admin') loadAdminData();
     }
 
-    // 現場登記邏輯
+    function backToMainMenu() {
+      ['register', 'invoice', 'admin'].forEach(p => {
+        document.getElementById(`sec-${p}`).classList.add('hidden');
+      });
+      document.getElementById('sub-page-header').classList.add('hidden');
+      document.getElementById('sec-main-menu').classList.remove('hidden');
+      stopActiveScanner();
+    }
+
     const categoryOptions = {
       expense: ['文具雜項', '清潔衛生用品', '餐飲茶水', '郵資快遞', '車資旅費', '維修保養', '其他零用金支出'],
       income: ['自費門診收入', '自費衛材收入', '洗腎相關自費', '其他收入']
@@ -203,20 +274,20 @@
       const type = document.querySelector('input[name="type"]:checked').value;
       const supplierGroup = document.getElementById('supplier-group');
       const categoryGroup = document.getElementById('category-group');
-      const amountOptional = document.getElementById('amount-optional');
+      const invoiceScanSection = document.getElementById('invoice-scan-section');
       const photoLabel = document.getElementById('photo-label');
       const amountInput = document.getElementById('amount');
 
-      if (type === 'delivery') {
+      if (type === 'delivery' || type === 'pharma') {
         supplierGroup.classList.remove('hidden');
         categoryGroup.classList.add('hidden');
-        amountOptional.classList.remove('hidden');
+        invoiceScanSection.classList.remove('hidden');
         amountInput.required = false;
-        photoLabel.innerText = "拍照上傳簽收單 / 送貨單";
+        photoLabel.innerText = type === 'pharma' ? "拍照上傳藥品簽收單 / 送貨單照片" : "拍照上傳衛材簽收單 / 送貨單照片";
       } else {
         supplierGroup.classList.add('hidden');
         categoryGroup.classList.remove('hidden');
-        amountOptional.classList.add('hidden');
+        invoiceScanSection.classList.add('hidden');
         amountInput.required = true;
         photoLabel.innerText = "拍照上傳發票 / 收據照片";
 
@@ -250,6 +321,76 @@
     updateFormMode();
     initLiff();
 
+    // 解析 QR Code 共用函式
+    function parseInvoiceQr(decodedText) {
+      if (!decodedText || decodedText.length < 10) return null;
+      const invNo = decodedText.substring(0, 10);
+      if (!/^[A-Z]{2}\d{8}$/i.test(invNo)) return null;
+
+      let parsedAmount = null;
+      if (decodedText.length >= 36) {
+        const hexAmt = decodedText.substring(29, 36);
+        const amt = parseInt(hexAmt, 16);
+        if (!isNaN(amt) && amt > 0 && amt < 10000000) parsedAmount = amt;
+      }
+      if (!parsedAmount && decodedText.length >= 40) {
+        const altHexAmt = decodedText.substring(21, 29);
+        const altAmt = parseInt(altHexAmt, 16);
+        if (!isNaN(altAmt) && altAmt > 0 && altAmt < 10000000) parsedAmount = altAmt;
+      }
+
+      return { invoiceNo: invNo.toUpperCase(), amount: parsedAmount };
+    }
+
+    // 1. 現場登記掃描器
+    function startRegisterScan() {
+      const readerElem = document.getElementById('reg-reader');
+      const btn = document.getElementById('reg-scan-btn');
+
+      if (activeScanner) {
+        stopActiveScanner();
+      } else {
+        readerElem.classList.remove('hidden');
+        btn.innerText = "🛑 關閉鏡頭";
+        btn.className = "w-full bg-slate-600 text-white font-bold py-2 rounded-xl text-xs";
+
+        Html5Qrcode.getCameras().then(cameras => {
+          if (cameras && cameras.length) {
+            const cameraId = cameras[cameras.length - 1].id; // 優先選取後鏡頭
+            activeScanner = new Html5Qrcode("reg-reader");
+            activeScanner.start(
+              cameraId,
+              { fps: 10, qrbox: { width: 220, height: 220 } },
+              (text) => {
+                const result = parseInvoiceQr(text);
+                if (result) {
+                  document.getElementById('reg-invoice-no').value = result.invoiceNo;
+                  if (result.amount) document.getElementById('amount').value = result.amount;
+                  alert(`✅ 感應成功！\n發票號碼：${result.invoiceNo}\n金額：${result.amount ? 'NT$ ' + result.amount : '請手動輸入'}`);
+                  stopActiveScanner();
+                }
+              }
+            ).catch(err => { alert("無法開啟相機，請允許瀏覽器相機權限。"); stopActiveScanner(); });
+          }
+        });
+      }
+    }
+
+    function stopActiveScanner() {
+      if (activeScanner) {
+        activeScanner.stop().then(() => {
+          activeScanner.clear();
+          activeScanner = null;
+          document.getElementById('reg-reader').classList.add('hidden');
+          document.getElementById('modal-reader').classList.add('hidden');
+          document.getElementById('reg-scan-btn').innerText = "📷 掃描隨貨發票 QR Code";
+          document.getElementById('reg-scan-btn').className = "w-full bg-emerald-600 text-white font-bold py-2 rounded-xl text-xs";
+          document.getElementById('start-scan-btn').innerText = "📷 開啟鏡頭掃描電子發票 QR Code";
+        }).catch(() => { activeScanner = null; });
+      }
+    }
+
+    // 現場表單送出處理
     document.getElementById('cash-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const submitBtn = document.getElementById('submit-btn');
@@ -260,12 +401,18 @@
         const type = document.querySelector('input[name="type"]:checked').value;
         const amountVal = document.getElementById('amount').value;
         const amount = amountVal ? parseFloat(amountVal) : 0;
+        const invoiceNo = document.getElementById('reg-invoice-no')?.value || null;
         const note = document.getElementById('note').value;
         const receiptFile = document.getElementById('receipt').files[0];
 
-        let supplier = type === 'delivery' ? document.getElementById('supplier').value : null;
-        let category = type === 'delivery' ? '衛材進貨點收' : document.getElementById('category').value;
-        let status = type === 'delivery' ? 'pending_invoice' : 'paid';
+        let supplier = (type === 'delivery' || type === 'pharma') ? document.getElementById('supplier').value : null;
+        let category = type === 'delivery' ? '衛材進貨點收' : (type === 'pharma' ? '藥品進貨點收' : document.getElementById('category').value);
+        
+        // 判斷狀態：若進貨時有填寫金額與發票號碼，直接歸為 unpaid 待付款（免去補登）；否則歸為 pending_invoice 待補發票
+        let status = 'paid';
+        if (type === 'delivery' || type === 'pharma') {
+          status = (invoiceNo && amount > 0) ? 'unpaid' : 'pending_invoice';
+        }
 
         let receiptUrl = null;
         if (receiptFile) {
@@ -277,6 +424,9 @@
           receiptUrl = urlData.publicUrl;
         }
 
+        const today = new Date();
+        const defaultDueDate = new Date(today.getFullYear(), today.getMonth() + 2, 0).toISOString().split('T')[0];
+
         await supabaseClient.from('cash_log').insert([{
           line_user_id: currentUser.lineUserId || 'UNKNOWN',
           user_name: currentUser.displayName,
@@ -284,13 +434,21 @@
           supplier: supplier,
           category: category,
           amount: amount,
+          invoice_no: invoiceNo,
+          payment_due_date: (status === 'unpaid') ? defaultDueDate : null,
           receipt_url: receiptUrl,
           note: note,
           status: status
         }]);
 
-        alert(type === 'delivery' ? '✅ 進貨簽收單已上傳！已進入「櫃檯補登」清單。' : '✅ 登記成功！');
+        let successMsg = '✅ 登記成功！';
+        if (type === 'delivery' || type === 'pharma') {
+          successMsg = (status === 'unpaid') ? '✅ 帶發票進貨已登記！資料已直接歸入「院長對帳待付款」專區。' : '✅ 進貨點收單已上傳！已進入「櫃檯補登」清單。';
+        }
+
+        alert(successMsg);
         document.getElementById('cash-form').reset();
+        document.getElementById('reg-invoice-no').value = '';
         updateFormMode();
       } catch (err) {
         alert('❌ 失敗：' + err.message);
@@ -300,7 +458,7 @@
       }
     });
 
-    // 櫃檯補登邏輯
+    // 2. 櫃檯補登邏輯
     async function loadPendingInvoices() {
       const container = document.getElementById('pending-invoice-list');
       container.innerHTML = '<p class="text-center text-xs text-slate-400 py-4">載入中...</p>';
@@ -317,12 +475,12 @@
         div.className = "bg-slate-50 border p-3 rounded-xl space-y-2 text-xs";
         div.innerHTML = `
           <div class="flex justify-between font-bold text-slate-800">
-            <span>${item.supplier || '未指定廠商'}</span>
-            <span class="text-slate-400 text-[10px]">${new Date(item.created_at).toLocaleDateString()}</span>
+            <span class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded">${item.category || '進貨'}</span>
+            <span class="text-slate-500">${item.supplier || '未指定廠商'}</span>
           </div>
           <p class="text-slate-600">說明：${item.note || '無'}</p>
-          ${item.receipt_url ? `<a href="${item.receipt_url}" target="_blank" class="text-blue-600 underline font-bold">📄 查看簽收單照片</a>` : ''}
-          <button onclick="openInvoiceModal('${item.id}')" class="w-full bg-amber-500 text-white font-bold py-1.5 rounded-lg text-xs">📝 補登發票與金額</button>
+          ${item.receipt_url ? `<a href="${item.receipt_url}" target="_blank" class="text-blue-600 underline font-bold inline-block">📄 查看簽收單照片</a>` : ''}
+          <button onclick="openInvoiceModal('${item.id}')" class="w-full bg-amber-500 text-white font-bold py-2 rounded-lg text-xs shadow-sm">📝 補登發票與金額</button>
         `;
         container.appendChild(div);
       });
@@ -338,65 +496,39 @@
     }
 
     function closeInvoiceModal() {
-      stopScanner();
+      stopActiveScanner();
       document.getElementById('invoice-modal').classList.add('hidden');
     }
 
-    function toggleScanner() {
-      const readerElem = document.getElementById('reader');
-      const scanBtn = document.getElementById('start-scan-btn');
-      if (html5QrcodeScanner) {
-        stopScanner();
+    function toggleModalScanner() {
+      const readerElem = document.getElementById('modal-reader');
+      const btn = document.getElementById('start-scan-btn');
+
+      if (activeScanner) {
+        stopActiveScanner();
       } else {
         readerElem.classList.remove('hidden');
-        scanBtn.innerText = "🛑 關閉鏡頭";
-        html5QrcodeScanner = new Html5Qrcode("reader");
-        html5QrcodeScanner.start(
-          { facingMode: "environment" },
-          { fps: 10, qrbox: { width: 220, height: 220 } },
-          (decodedText) => {
-            if (decodedText && decodedText.length >= 10) {
-              const invNo = decodedText.substring(0, 10);
-              if (/^[A-Z]{2}\d{8}$/i.test(invNo)) {
-                document.getElementById('modal-invoice-no').value = invNo.toUpperCase();
-                
-                let parsedAmount = null;
-                // 標準格式：第 29-36 碼 16進位金額
-                if (decodedText.length >= 36) {
-                  const hexAmt = decodedText.substring(29, 36);
-                  const amt = parseInt(hexAmt, 16);
-                  if (!isNaN(amt) && amt > 0 && amt < 10000000) parsedAmount = amt;
-                }
-                // 備用格式：第 21-29 碼
-                if (!parsedAmount && decodedText.length >= 40) {
-                  const altHexAmt = decodedText.substring(21, 29);
-                  const altAmt = parseInt(altHexAmt, 16);
-                  if (!isNaN(altAmt) && altAmt > 0 && altAmt < 10000000) parsedAmount = altAmt;
-                }
+        btn.innerText = "🛑 關閉鏡頭";
 
-                if (parsedAmount) {
-                  document.getElementById('modal-amount').value = parsedAmount;
-                  alert(`✅ 已感應發票！\n號碼：${invNo.toUpperCase()}\n金額：NT$ ${parsedAmount}\n\n(若金額有誤可手動微調)`);
-                } else {
-                  alert(`✅ 已感應發票號碼：${invNo.toUpperCase()}\n請手動輸入金額。`);
+        Html5Qrcode.getCameras().then(cameras => {
+          if (cameras && cameras.length) {
+            const cameraId = cameras[cameras.length - 1].id;
+            activeScanner = new Html5Qrcode("modal-reader");
+            activeScanner.start(
+              cameraId,
+              { fps: 10, qrbox: { width: 220, height: 220 } },
+              (text) => {
+                const result = parseInvoiceQr(text);
+                if (result) {
+                  document.getElementById('modal-invoice-no').value = result.invoiceNo;
+                  if (result.amount) document.getElementById('modal-amount').value = result.amount;
+                  alert(`✅ 感應成功！\n號碼：${result.invoiceNo}\n金額：${result.amount ? 'NT$ ' + result.amount : '請手動輸入'}`);
+                  stopActiveScanner();
                 }
-
-                stopScanner();
               }
-            }
+            ).catch(() => stopActiveScanner());
           }
-        ).catch(() => stopScanner());
-      }
-    }
-
-    function stopScanner() {
-      if (html5QrcodeScanner) {
-        html5QrcodeScanner.stop().then(() => {
-          html5QrcodeScanner.clear();
-          html5QrcodeScanner = null;
-          document.getElementById('reader').classList.add('hidden');
-          document.getElementById('start-scan-btn').innerText = "📷 掃描電子發票 QR Code";
-        }).catch(() => { html5QrcodeScanner = null; });
+        });
       }
     }
 
@@ -410,12 +542,12 @@
         status: 'unpaid'
       }).eq('id', id);
 
-      alert('✅ 發票與金額已補登！');
+      alert('✅ 發票與金額已成功補登！');
       closeInvoiceModal();
       loadPendingInvoices();
     });
 
-    // 院長對帳後台邏輯
+    // 3. 院長對帳後台邏輯
     async function loadAdminData() {
       const container = document.getElementById('admin-data-list');
       const { data } = await supabaseClient.from('cash_log').select('*').eq('status', 'unpaid').order('created_at', { ascending: false });
@@ -438,8 +570,9 @@
             <span>${item.supplier || item.category}</span>
             <span class="text-rose-600">NT$ ${Number(item.amount).toLocaleString()}</span>
           </div>
-          <p class="text-slate-600">發票號碼：${item.invoice_no || '未設定'}</p>
+          <p class="text-slate-600">發票號碼：<span class="font-mono bg-slate-200 px-1 rounded text-slate-800">${item.invoice_no || '未設定'}</span></p>
           <p class="text-slate-600">到期日：<span class="font-bold text-rose-600">${item.payment_due_date || '未設定'}</span></p>
+          ${item.receipt_url ? `<a href="${item.receipt_url}" target="_blank" class="text-blue-600 underline font-bold inline-block">📄 查看憑證照片</a>` : ''}
           <button onclick="markAsPaid('${item.id}')" class="w-full bg-emerald-600 text-white font-bold py-1.5 rounded-lg text-xs">💵 完成付款與核銷</button>
         `;
         container.appendChild(div);
