@@ -86,22 +86,18 @@
     </form>
   </div>
 </div>
-
 <script>
+  // ==================== 【請修改此處的設定參數】 ====================
+  const LIFF_ID = '2011071479-1rEMTEv0'; 
+  const SUPABASE_URL = 'https://bvbknaaljuwxrzvoqcrt.supabase.co'; 
+  const SUPABASE_ANON_KEY = 'sb_publishable_fPdr9TBzrw9Ycb6GEpF7UA_zeLqblfo'; 
+  // ================================================================
 
-// ==================== 【請修改此處的設定參數】 ====================
-const LIFF_ID = '2011071479-1rEMTEv0';
-const SUPABASE_URL = 'https://bvbknaaljuwxrzvoqcrt.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_fPdr9TBzrw9Ycb6GEpF7UA_zeLqblfo';
-// ================================================================
-
-
-
-  // 初始化 Supabase
-  const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  // 1. 初始化 Supabase（修正變數名稱避免與 SDK 衝突）
+  const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   let currentUser = { lineUserId: '', displayName: '匿名同仁' };
 
-  // 初始化 LINE LIFF
+  // 2. 初始化 LINE LIFF
   async function initLiff() {
     try {
       await liff.init({ liffId: LIFF_ID });
@@ -115,14 +111,14 @@ const SUPABASE_ANON_KEY = 'sb_publishable_fPdr9TBzrw9Ycb6GEpF7UA_zeLqblfo';
       }
     } catch (err) {
       console.error("LIFF 初始化失敗:", err);
-      document.getElementById('user-name').innerText = "測試模式 (無 LINE API)";
+      document.getElementById('user-name').innerText = "訪客模式 / 測試中";
       currentUser.lineUserId = "TEST_USER_123";
     }
   }
 
   initLiff();
 
-  // 表單提交處理
+  // 3. 表單提交處理
   document.getElementById('cash-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const submitBtn = document.getElementById('submit-btn');
@@ -138,31 +134,30 @@ const SUPABASE_ANON_KEY = 'sb_publishable_fPdr9TBzrw9Ycb6GEpF7UA_zeLqblfo';
 
       let receiptUrl = null;
 
-      // 1. 若有拍照，先上傳至 Supabase Storage
+      // 若有上傳照片，先傳至 Supabase Storage
       if (receiptFile) {
         submitBtn.innerText = "照片上傳中...";
         const fileExt = receiptFile.name.split('.').pop();
         const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
         const filePath = `receipts/${fileName}`;
 
-        const { data: uploadData, error: uploadError } = await supabase.storage
+        const { data: uploadData, error: uploadError } = await supabaseClient.storage
           .from('receipts')
           .upload(filePath, receiptFile);
 
         if (uploadError) throw uploadError;
 
-        // 取得公開下載網址
-        const { data: urlData } = supabase.storage.from('receipts').getPublicUrl(filePath);
+        const { data: urlData } = supabaseClient.storage.from('receipts').getPublicUrl(filePath);
         receiptUrl = urlData.publicUrl;
       }
 
-      // 2. 寫入 Supabase cash_log 資料表
+      // 寫入 Supabase cash_log 資料表
       submitBtn.innerText = "寫入資料庫中...";
-      const { data, error } = await supabase
+      const { data, error } = await supabaseClient
         .from('cash_log')
         .insert([
           {
-            line_user_id: currentUser.lineUserId,
+            line_user_id: currentUser.lineUserId || 'UNKNOWN_USER',
             user_name: currentUser.displayName,
             type: type,
             category: category,
@@ -175,10 +170,9 @@ const SUPABASE_ANON_KEY = 'sb_publishable_fPdr9TBzrw9Ycb6GEpF7UA_zeLqblfo';
 
       if (error) throw error;
 
-      alert('✅ 登記成功！零用金/收入資料已同步至雲端。');
+      alert('✅ 登記成功！資料已同步至雲端。');
       document.getElementById('cash-form').reset();
 
-      // 關閉 LIFF 視窗回到 LINE 對話框
       if (liff.isInClient()) {
         liff.closeWindow();
       }
@@ -192,5 +186,4 @@ const SUPABASE_ANON_KEY = 'sb_publishable_fPdr9TBzrw9Ycb6GEpF7UA_zeLqblfo';
     }
   });
 </script>
-</body>
-</html>
+
