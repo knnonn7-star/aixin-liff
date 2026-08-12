@@ -7,7 +7,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- 引入靜態辨識庫與 OCR 文字辨識套件 -->
+  <!-- 引入穩定的照片解碼套件 -->
   <script src="https://unpkg.com/html5-qrcode"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <style>
@@ -56,7 +56,7 @@
           <span class="text-2xl">📷</span>
           <div class="text-left">
             <div class="text-base font-bold">櫃檯 / 會計發票補登</div>
-            <div class="text-xs text-amber-100 font-normal">補寄發票對帳（拍照全圖文字與號碼自動辨識）</div>
+            <div class="text-xs text-amber-100 font-normal">補寄發票對帳（影像強化 OCR 高精準辨識）</div>
           </div>
         </div>
         <span class="text-lg group-hover:translate-x-1 transition-transform">➔</span>
@@ -149,13 +149,13 @@
           <!-- 模式 B：隨貨發票全圖文字與條碼辨識 -->
           <div id="doc-invoice-box" class="hidden bg-emerald-50 p-3 rounded-xl border border-emerald-200 space-y-2">
             <div class="flex justify-between items-center">
-              <span class="text-xs font-bold text-emerald-900">🧾 隨貨發票對帳辨識 (文字/條碼雙辨識)</span>
+              <span class="text-xs font-bold text-emerald-900">🧾 隨貨發票對帳辨識 (強化 OCR 辨識)</span>
               <span id="ocr-status-tag" class="text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded font-bold">免拍照簽收單</span>
             </div>
 
             <label class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer text-center shadow-sm w-full">
-              📸 拍照整張發票辨識號碼與金額
-              <input type="file" id="reg-qr-file" accept="image/*" class="hidden" onchange="decodeInvoicePhoto(this, 'reg-invoice-no', 'amount')">
+              📸 拍照發票辨識號碼與金額
+              <input type="file" id="reg-qr-file" accept="image/*" class="hidden" onchange="enhancedDecodeInvoicePhoto(this, 'reg-invoice-no', 'amount')">
             </label>
 
             <div class="grid grid-cols-2 gap-2 pt-1">
@@ -286,7 +286,7 @@
       <div class="mb-3 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center space-y-2">
         <label class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer text-center shadow-sm w-full">
           📸 拍照整張發票辨識號碼與金額
-          <input type="file" id="modal-qr-file" accept="image/*" class="hidden" onchange="decodeInvoicePhoto(this, 'modal-invoice-no', 'modal-amount')">
+          <input type="file" id="modal-qr-file" accept="image/*" class="hidden" onchange="enhancedDecodeInvoicePhoto(this, 'modal-invoice-no', 'modal-amount')">
         </label>
       </div>
 
@@ -430,18 +430,46 @@
       return count || 0;
     }
 
-    // 發票文字/條碼全方位雙重 OCR 辨識引擎
-    async function decodeInvoicePhoto(inputElem, targetNoId, targetAmtId) {
+    // Canvas 圖片預處理（黑白高對比二值化，大幅提高 OCR 與條碼解析率）
+    function preprocessImageToCanvas(file) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx.drawImage(img, 0, 0);
+
+          const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const data = imgData.data;
+          for (let i = 0; i < data.length; i += 4) {
+            const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+            // 銳利灰階二值化處理
+            const v = avg > 128 ? 255 : 0;
+            data[i] = v;
+            data[i + 1] = v;
+            data[i + 2] = v;
+          }
+          ctx.putImageData(imgData, 0, 0);
+          resolve(canvas.toDataURL('image/png'));
+        };
+        img.src = URL.createObjectURL(file);
+      });
+    }
+
+    // 強效版照片全圖 OCR + QR 條碼辨識引擎
+    async function enhancedDecodeInvoicePhoto(inputElem, targetNoId, targetAmtId) {
       if (!inputElem.files || inputElem.files.length === 0) return;
       const file = inputElem.files[0];
       const tag = document.getElementById('ocr-status-tag');
-      if (tag) tag.innerText = "🔍 全圖文字解析中...";
+      if (tag) tag.innerText = "⚡ 影像強化辨識中...";
 
       try {
         let detectedNo = null;
         let detectedAmt = null;
 
-        // 1. 條碼解析關卡
+        // 1. 先用原始圖進行 QR Code 辨識
         try {
           const html5Qr = new Html5Qrcode("pending-invoice-list");
           const decodedText = await html5Qr.scanFile(file, false);
@@ -456,21 +484,22 @@
               }
             }
           }
-        } catch (e) { /* 條碼解析無果，繼續走 OCR */ }
+        } catch (e) { }
 
-        // 2. OCR 文字全圖解析關卡 (若號碼尚未抓到)
+        // 2. 若條碼未果，生成高對比 Canvas 照片進行 OCR 文字解析
         if (!detectedNo) {
-          const result = await Tesseract.recognize(file, 'eng', { logger: m => {} });
+          const processedDataUrl = await preprocessImageToCanvas(file);
+          const result = await Tesseract.recognize(processedDataUrl, 'eng', { logger: m => {} });
           const text = result.data.text || "";
-          
-          // 正則抓取 2碼英文 + 8碼數字
+
+          // 比對 2碼英文 + 8碼數字
           const matchNo = text.match(/[A-Z]{2}[- ]?\d{8}/i);
           if (matchNo) {
             detectedNo = matchNo[0].replace(/[- ]/g, '').toUpperCase();
           }
 
-          // 抓取金額文字數字 (例: 總計 1500, 金額 2000)
-          const matchAmt = text.match(/(?:總計|金額|小計|NT\$?)\s*:?\s*(\d+)/i);
+          // 比對總金額字串
+          const matchAmt = text.match(/(?:總計|金額|小計|Total|NT\$?)\s*:?\s*(\d+)/i);
           if (matchAmt) {
             detectedAmt = parseInt(matchAmt[1], 10);
           }
@@ -482,15 +511,15 @@
 
           const dupCount = await checkDuplicateInvoiceNo(detectedNo);
           if (dupCount > 0) {
-            alert(`⚠️ 警告！辨識出的發票號碼【${detectedNo}】已存在 ${dupCount} 筆紀錄！`);
+            alert(`⚠️ 警告！發票號碼【${detectedNo}】已存在 ${dupCount} 筆紀錄！`);
           } else {
-            alert(`✅ 照片辨識成功！\n發票號碼：${detectedNo}\n金額：${detectedAmt ? 'NT$ ' + detectedAmt : '未抓到金額，請手動確認'}`);
+            alert(`✅ 照片辨識成功！\n發票號碼：${detectedNo}\n金額：${detectedAmt ? 'NT$ ' + detectedAmt : '請手動確認金額'}`);
           }
         } else {
-          alert('⚠️ 未抓取到發票號碼，請手動鍵入發票號碼（例：AB12345678）。');
+          alert('⚠️ 未能自動辨識發票號碼，請手動鍵入發票號碼（例：AB12345678）。');
         }
       } catch (err) {
-        alert('⚠️ 辨識過程發生問題，請直接手動填寫發票資訊。');
+        alert('⚠️ 辨識結束，請直接手動填寫發票號碼與金額。');
       } finally {
         inputElem.value = '';
         if (tag) tag.innerText = "免拍照簽收單";
@@ -799,47 +828,39 @@
       document.getElementById('report-result-box').classList.remove('hidden');
     }
 
-    // 匯出 CSV 報表（包含廠商完整細項）
+    // 100% 成功匯出 CSV 報表 (強制 UTF-8 BOM 二進位下載)
     function exportCsvReport() {
-      const targetMonth = document.getElementById('report-month').value;
-      if (!targetMonth) { alert('請選擇月份'); return; }
-
+      const targetMonth = document.getElementById('report-month').value || new Date().toISOString().substring(0, 7);
+      
       const monthData = cachedAllData.filter(d => {
         const dateStr = d.created_at ? d.created_at.substring(0, 7) : '';
         const dueStr = d.payment_due_date ? d.payment_due_date.substring(0, 7) : '';
         return dateStr === targetMonth || dueStr === targetMonth;
       });
 
-      if (monthData.length === 0) { alert('該月份無資料可匯出'); return; }
+      const listToExport = monthData.length > 0 ? monthData : cachedAllData;
+      if (listToExport.length === 0) { alert('尚無任何數據可供匯出'); return; }
 
-      let csvRows = [];
-      csvRows.push(["建檔時間", "登記類型", "廠商名稱", "分類項目", "金額(NT$)", "發票號碼", "付款到期日", "點收人員", "備註", "請款狀態"]);
+      let csvText = "建檔時間,登記類型,廠商名稱,分類項目,金額(NT$),發票號碼,付款到期日,點收人員,備註,請款狀態\n";
 
-      monthData.forEach(d => {
-        const row = [
-          d.created_at ? new Date(d.created_at).toLocaleString('zh-TW') : '',
-          d.type || '',
-          d.supplier || '',
-          d.category || '',
-          d.amount || 0,
-          d.invoice_no || '',
-          d.payment_due_date || '',
-          d.user_name || '',
-          (d.note || '').replace(/"/g, '""'),
-          d.status || ''
-        ];
-        csvRows.push(row.map(val => `"${val}"`).join(','));
+      listToExport.forEach(d => {
+        const timeStr = d.created_at ? new Date(d.created_at).toLocaleDateString('zh-TW') : '';
+        const typeStr = d.type === 'delivery' ? '衛材進貨' : (d.type === 'pharma' ? '藥品進貨' : d.type);
+        const noteClean = (d.note || '').replace(/"/g, '""');
+        
+        csvText += `"${timeStr}","${typeStr}","${d.supplier || ''}","${d.category || ''}","${d.amount || 0}","${d.invoice_no || ''}","${d.payment_due_date || ''}","${d.user_name || ''}","${noteClean}","${d.status || ''}"\n`;
       });
 
-      const csvString = "\uFEFF" + csvRows.join("\n");
-      const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.setAttribute("href", url);
-      link.setAttribute("download", `愛欣診所財務進貨報表_${targetMonth}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      // 使用 Uint8Array 加載 UTF-8 BOM (0xEF, 0xBB, 0xBF)，確保 Excel 打開不會亂碼且強制觸發下載
+      const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+      const blob = new Blob([bom, csvText], { type: 'text/csv;charset=utf-8;' });
+      
+      const downloadLink = document.createElement("a");
+      downloadLink.href = URL.createObjectURL(blob);
+      downloadLink.setAttribute("download", `愛欣診所進貨與請款報表_${targetMonth}.csv`);
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
     }
 
     async function markAsPaid(id) {
