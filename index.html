@@ -47,7 +47,7 @@
           <span class="text-2xl">📷</span>
           <div class="text-left">
             <div class="text-base font-bold">櫃檯 / 會計發票補登</div>
-            <div class="text-xs text-amber-100 font-normal">補寄發票對帳（掃碼自動帶入發票與金額）</div>
+            <div class="text-xs text-amber-100 font-normal">補寄發票對帳（掃碼自動帶入與重複警示）</div>
           </div>
         </div>
         <span class="text-lg group-hover:translate-x-1 transition-transform">➔</span>
@@ -116,7 +116,7 @@
           <select id="category" class="w-full p-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 bg-white"></select>
         </div>
 
-        <!-- 現場進貨單據憑證模式（二選一清晰劃分） -->
+        <!-- 現場進貨憑證種類 (二選一) -->
         <div id="delivery-doc-mode-section" class="space-y-3">
           <label class="block text-xs font-bold text-slate-700 mb-1">本次進貨憑證種類</label>
           <div class="grid grid-cols-2 gap-2">
@@ -350,20 +350,30 @@
     updateFormMode();
     initLiff();
 
-    // 高精準度台灣電子發票 QR Code 解析演算法
+    // 檢查發票號碼是否已存在資料庫中 (回傳重複資料筆數)
+    async function checkDuplicateInvoiceNo(invoiceNo, excludeId = null) {
+      if (!invoiceNo) return 0;
+      let query = supabaseClient
+        .from('cash_log')
+        .select('id', { count: 'exact' })
+        .eq('invoice_no', invoiceNo.trim().toUpperCase());
+      
+      if (excludeId) query = query.neq('id', excludeId);
+      
+      const { count, error } = await query;
+      if (error) return 0;
+      return count || 0;
+    }
+
+    // 解析台灣電子發票 QR Code
     function parseInvoiceQr(decodedText) {
       if (!decodedText || decodedText.length < 10) return null;
       
-      // 1. 發票號碼：前10碼 (2碼大寫英文 + 8碼數字)
       const invNo = decodedText.substring(0, 10);
       if (!/^[A-Z]{2}\d{8}$/i.test(invNo)) return null;
 
       let parsedAmount = null;
-
-      // 2. 16進位總金額精準抓取 (台灣紙本電子發票規範：接在隨機碼後方的 8 碼 16 進位字串)
-      // 典型格式範例：AB1234567811108237777000003e8... (000003e8 換算 10 進位即為 1000 元)
       if (decodedText.length >= 37) {
-        // 抓取第 29 至 37 位元
         const hexStr = decodedText.substring(29, 37);
         const val = parseInt(hexStr, 16);
         if (!isNaN(val) && val > 0 && val < 50000000) {
@@ -374,7 +384,6 @@
       return { invoiceNo: invNo.toUpperCase(), amount: parsedAmount };
     }
 
-    // 啟動鏡頭（強制後置鏡頭）
     async function startCameraScanner(elementId, onSuccess) {
       if (activeScanner) await stopActiveScanner();
 
@@ -382,10 +391,8 @@
       readerElem.classList.remove('hidden');
 
       activeScanner = new Html5Qrcode(elementId);
-
       const config = { fps: 15, qrbox: { width: 230, height: 230 }, aspectRatio: 1.0 };
 
-      // 優先要求後置鏡頭 (environment)
       activeScanner.start(
         { facingMode: { exact: "environment" } },
         config,
@@ -394,7 +401,6 @@
           if (res) onSuccess(res);
         }
       ).catch(() => {
-        // 若 exact: environment 失敗，降級選取後置鏡頭裝置名稱
         Html5Qrcode.getCameras().then(cameras => {
           if (cameras && cameras.length) {
             let backCam = cameras.find(c => c.label.toLowerCase().includes('back') || c.label.toLowerCase().includes('rear') || c.label.toLowerCase().includes('environment'));
@@ -432,10 +438,17 @@
         stopActiveScanner();
       } else {
         btn.innerText = "🛑 關閉鏡頭";
-        startCameraScanner('reg-reader', (res) => {
+        startCameraScanner('reg-reader', async (res) => {
           document.getElementById('reg-invoice-no').value = res.invoiceNo;
           if (res.amount) document.getElementById('amount').value = res.amount;
-          alert(`✅ 成功讀取發票！\n發票號碼：${res.invoiceNo}\n金額：${res.amount ? 'NT$ ' + res.amount : '請手動確認輸入'}`);
+
+          // 掃描後即刻比對重複
+          const dupCount = await checkDuplicateInvoiceNo(res.invoiceNo);
+          if (dupCount > 0) {
+            alert(`⚠️ 警告！發票號碼【${res.invoiceNo}】在系統中已存在 ${dupCount} 筆資料！\n請務必核對是否重複對帳報銷。`);
+          } else {
+            alert(`✅ 成功讀取發票！\n發票號碼：${res.invoiceNo}\n金額：${res.amount ? 'NT$ ' + res.amount : '請手動確認輸入'}`);
+          }
           stopActiveScanner();
         });
       }
@@ -446,7 +459,7 @@
       e.preventDefault();
       const submitBtn = document.getElementById('submit-btn');
       submitBtn.disabled = true;
-      submitBtn.innerText = "處理中...";
+      submitBtn.innerText = "驗證資料中...";
 
       try {
         const type = document.querySelector('input[name="type"]:checked').value;
@@ -461,17 +474,32 @@
         if (type === 'delivery' || type === 'pharma') {
           supplier = document.getElementById('supplier').value;
           category = type === 'delivery' ? '衛材進貨點收' : '藥品進貨點收';
-          
           const docMode = document.querySelector('input[name="doc_mode"]:checked').value;
           
           if (docMode === 'has_invoice') {
-            // 隨貨發票模式
-            invoiceNo = document.getElementById('reg-invoice-no').value;
+            invoiceNo = document.getElementById('reg-invoice-no').value.trim().toUpperCase();
             amount = parseFloat(document.getElementById('amount').value) || 0;
-            status = 'unpaid'; // 直接跳過補登，歸入待付款
+            status = 'unpaid';
+
+            if (!invoiceNo) {
+              alert('⚠️ 請輸入或掃描發票號碼！');
+              submitBtn.disabled = false;
+              submitBtn.innerText = "確認點收並送出";
+              return;
+            }
+
+            // 發票號碼重複警告關卡
+            const dupCount = await checkDuplicateInvoiceNo(invoiceNo);
+            if (dupCount > 0) {
+              const confirmDup = confirm(`🚨 重複發票警示！\n\n發票號碼【${invoiceNo}】在資料庫中已存在 ${dupCount} 筆紀錄。\n\n請問您確定要重複建立此筆發票資料嗎？`);
+              if (!confirmDup) {
+                submitBtn.disabled = false;
+                submitBtn.innerText = "確認點收並送出";
+                return;
+              }
+            }
           } else {
-            // 簽收單模式
-            status = 'pending_invoice'; // 歸入待補發票清單
+            status = 'pending_invoice';
             const receiptFile = document.getElementById('receipt').files[0];
             if (receiptFile) {
               const fileExt = receiptFile.name.split('.').pop();
@@ -483,7 +511,6 @@
             }
           }
         } else {
-          // 一般收入/支出
           category = document.getElementById('category').value;
           amount = parseFloat(document.getElementById('amount').value) || 0;
           const receiptFile = document.getElementById('receipt').files[0];
@@ -497,6 +524,7 @@
           }
         }
 
+        submitBtn.innerText = "寫入資料庫中...";
         const today = new Date();
         const defaultDueDate = new Date(today.getFullYear(), today.getMonth() + 2, 0).toISOString().split('T')[0];
 
@@ -579,10 +607,16 @@
         stopActiveScanner();
       } else {
         btn.innerText = "🛑 關閉鏡頭";
-        startCameraScanner('modal-reader', (res) => {
+        startCameraScanner('modal-reader', async (res) => {
           document.getElementById('modal-invoice-no').value = res.invoiceNo;
           if (res.amount) document.getElementById('modal-amount').value = res.amount;
-          alert(`✅ 感應成功！\n發票號碼：${res.invoiceNo}\n金額：${res.amount ? 'NT$ ' + res.amount : '請手動輸入'}`);
+
+          const dupCount = await checkDuplicateInvoiceNo(res.invoiceNo, document.getElementById('modal-id').value);
+          if (dupCount > 0) {
+            alert(`⚠️ 警告！發票號碼【${res.invoiceNo}】在系統中已存在 ${dupCount} 筆紀錄！`);
+          } else {
+            alert(`✅ 感應成功！\n發票號碼：${res.invoiceNo}\n金額：${res.amount ? 'NT$ ' + res.amount : '請手動輸入'}`);
+          }
           stopActiveScanner();
         });
       }
@@ -591,9 +625,19 @@
     document.getElementById('modal-invoice-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const id = document.getElementById('modal-id').value;
+      const invoiceNo = document.getElementById('modal-invoice-no').value.trim().toUpperCase();
+      const amount = parseFloat(document.getElementById('modal-amount').value);
+
+      // 補登重複警示
+      const dupCount = await checkDuplicateInvoiceNo(invoiceNo, id);
+      if (dupCount > 0) {
+        const confirmDup = confirm(`🚨 重複發票警示！\n\n發票號碼【${invoiceNo}】在系統中已存在 ${dupCount} 筆紀錄。\n\n請問您確定要使用此重複發票號碼儲存嗎？`);
+        if (!confirmDup) return;
+      }
+
       await supabaseClient.from('cash_log').update({
-        invoice_no: document.getElementById('modal-invoice-no').value,
-        amount: parseFloat(document.getElementById('modal-amount').value),
+        invoice_no: invoiceNo,
+        amount: amount,
         payment_due_date: document.getElementById('modal-due-date').value,
         status: 'unpaid'
       }).eq('id', id);
@@ -603,10 +647,10 @@
       loadPendingInvoices();
     });
 
-    // 3. 院長對帳後台邏輯
+    // 3. 院長對帳後台邏輯 (包含重複發票計數標籤渲染)
     async function loadAdminData() {
       const container = document.getElementById('admin-data-list');
-      const { data } = await supabaseClient.from('cash_log').select('*').eq('status', 'unpaid').order('created_at', { ascending: false });
+      const { data } = await supabaseClient.from('cash_log').select('*').order('created_at', { ascending: false });
 
       if (!data || data.length === 0) {
         container.innerHTML = '<p class="text-center text-xs text-slate-400 py-6">無待付款項目</p>';
@@ -614,22 +658,43 @@
         return;
       }
 
-      const total = data.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+      // 統計全庫發票號碼出現頻率
+      const invoiceCounts = {};
+      data.forEach(item => {
+        if (item.invoice_no) {
+          const invKey = item.invoice_no.trim().toUpperCase();
+          invoiceCounts[invKey] = (invoiceCounts[invKey] || 0) + 1;
+        }
+      });
+
+      const unpaidData = data.filter(d => d.status === 'unpaid');
+      const total = unpaidData.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
       document.getElementById('total-unpaid-amount').innerText = `NT$ ${total.toLocaleString()}`;
 
+      if (unpaidData.length === 0) {
+        container.innerHTML = '<p class="text-center text-xs text-slate-400 py-6">🎉 目前無待付款項目！</p>';
+        return;
+      }
+
       container.innerHTML = '';
-      data.forEach(item => {
+      unpaidData.forEach(item => {
+        const invKey = item.invoice_no ? item.invoice_no.trim().toUpperCase() : null;
+        const isDuplicate = invKey && invoiceCounts[invKey] > 1;
+
         const div = document.createElement('div');
-        div.className = "bg-slate-50 border p-3 rounded-xl space-y-2 text-xs";
+        div.className = `bg-slate-50 border ${isDuplicate ? 'border-rose-400 bg-rose-50/50' : 'border-slate-200'} p-3 rounded-xl space-y-2 text-xs`;
         div.innerHTML = `
-          <div class="flex justify-between font-bold text-slate-800">
-            <span>${item.supplier || item.category}</span>
-            <span class="text-rose-600 font-black">NT$ ${Number(item.amount).toLocaleString()}</span>
+          <div class="flex justify-between items-center font-bold text-slate-800">
+            <span class="flex items-center gap-1">
+              ${item.supplier || item.category}
+              ${isDuplicate ? `<span class="bg-rose-600 text-white font-bold text-[10px] px-1.5 py-0.5 rounded shadow-sm">⚠️ 發票號碼重複 (${invoiceCounts[invKey]}筆)</span>` : ''}
+            </span>
+            <span class="text-rose-600 font-black text-sm">NT$ ${Number(item.amount).toLocaleString()}</span>
           </div>
-          <p class="text-slate-600">發票號碼：<span class="font-mono bg-slate-200 px-1 rounded text-slate-800">${item.invoice_no || '未設定'}</span></p>
+          <p class="text-slate-600">發票號碼：<span class="font-mono ${isDuplicate ? 'bg-rose-200 text-rose-900 font-bold' : 'bg-slate-200 text-slate-800'} px-1.5 py-0.5 rounded">${item.invoice_no || '未設定'}</span></p>
           <p class="text-slate-600">到期日：<span class="font-bold text-rose-600">${item.payment_due_date || '未設定'}</span></p>
           ${item.receipt_url ? `<a href="${item.receipt_url}" target="_blank" class="text-blue-600 underline font-bold inline-block">📄 查看憑證照片</a>` : ''}
-          <button onclick="markAsPaid('${item.id}')" class="w-full bg-emerald-600 text-white font-bold py-1.5 rounded-lg text-xs shadow-sm">💵 完成付款與核銷</button>
+          <button onclick="markAsPaid('${item.id}')" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 rounded-lg text-xs shadow-sm">💵 完成付款與核銷</button>
         `;
         container.appendChild(div);
       });
