@@ -54,7 +54,7 @@
           <span class="text-2xl">📷</span>
           <div class="text-left">
             <div class="text-base font-bold">櫃檯 / 會計發票補登</div>
-            <div class="text-xs text-amber-100 font-normal">補寄發票對帳（掃碼自動帶入與重複警示）</div>
+            <div class="text-xs text-amber-100 font-normal">補寄發票對帳（拍照/掃碼自動解析金額）</div>
           </div>
         </div>
         <span class="text-lg group-hover:translate-x-1 transition-transform">➔</span>
@@ -123,6 +123,7 @@
           <select id="category" class="w-full p-2.5 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 bg-white"></select>
         </div>
 
+        <!-- 現場進貨憑證種類 (二選一) -->
         <div id="delivery-doc-mode-section" class="space-y-3">
           <label class="block text-xs font-bold text-slate-700 mb-1">本次進貨憑證種類</label>
           <div class="grid grid-cols-2 gap-2">
@@ -136,15 +137,30 @@
             </label>
           </div>
 
+          <!-- 模式 A：僅拍照簽收單照片 -->
           <div id="doc-receipt-box" class="bg-slate-50 p-3 rounded-xl border border-slate-200">
             <label class="block text-xs font-bold text-slate-700 mb-1">拍照上傳簽收單 / 送貨單照片</label>
             <input type="file" id="receipt" accept="image/*" class="w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700">
+            <p class="text-[11px] text-slate-400 mt-1">無需填寫金額，送出後將自動進入「櫃檯待補發票」對帳清單。</p>
           </div>
 
+          <!-- 模式 B：隨貨發票解析區 -->
           <div id="doc-invoice-box" class="hidden bg-emerald-50 p-3 rounded-xl border border-emerald-200 space-y-2">
-            <button type="button" onclick="startRegisterScan()" id="reg-scan-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1 shadow-sm">
-              📷 掃描隨貨發票左側 QR Code
-            </button>
+            <div class="flex justify-between items-center">
+              <span class="text-xs font-bold text-emerald-900">🧾 隨貨發票對帳解析</span>
+              <span class="text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded font-bold">免拍照簽收單</span>
+            </div>
+
+            <!-- 拍照自動辨識按鈕 -->
+            <div class="grid grid-cols-2 gap-2">
+              <label class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1 cursor-pointer text-center shadow-sm">
+                📸 拍照發票 QR Code 辨識
+                <input type="file" id="reg-qr-file" accept="image/*" class="hidden" onchange="decodeQrFromFile(this, 'reg-invoice-no', 'amount')">
+              </label>
+              <button type="button" onclick="startRegisterScan()" id="reg-scan-btn" class="bg-slate-700 hover:bg-slate-800 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1 shadow-sm">
+                📷 動態鏡頭掃描
+              </button>
+            </div>
             <div id="reg-reader" class="hidden rounded-lg overflow-hidden border border-slate-300"></div>
 
             <div class="grid grid-cols-2 gap-2 pt-1">
@@ -189,24 +205,20 @@
         <button onclick="loadAdminData()" class="text-xs bg-blue-600 text-white px-2.5 py-1 rounded-lg font-bold">🔄 重新整理數據</button>
       </div>
 
-      <!-- 統計指標卡片 1：待處理款項 -->
       <div>
         <h3 class="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1">📌 1. 待處理款項概覽</h3>
         <div class="grid grid-cols-2 gap-3 text-xs">
           <div class="bg-amber-50 border border-amber-200 rounded-xl p-3">
             <span class="text-amber-800 font-bold">待補發票簽收單</span>
             <p id="stat-pending-count" class="text-xl font-black text-amber-700 mt-1">0 筆</p>
-            <p class="text-[10px] text-amber-600">等待櫃檯/廠商對對帳補發票</p>
           </div>
           <div class="bg-rose-50 border border-rose-200 rounded-xl p-3">
             <span class="text-rose-800 font-bold">全院應付帳款總額</span>
             <p id="stat-unpaid-total" class="text-xl font-black text-rose-700 mt-1">NT$ 0</p>
-            <p class="text-[10px] text-rose-600">發票已補登記，等待付款核銷</p>
           </div>
         </div>
       </div>
 
-      <!-- 統計指標卡片 2：各家廠商依時間分列結餘款項 -->
       <div>
         <h3 class="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1">📅 2. 各廠商依付款到期月份結餘金額</h3>
         <div id="supplier-timeline-list" class="space-y-3">
@@ -214,7 +226,6 @@
         </div>
       </div>
 
-      <!-- 統計指標卡片 3：月度財務報表生成 -->
       <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
         <h3 class="text-xs font-bold text-slate-800 flex items-center gap-1">📄 3. 每月財務與進貨報表</h3>
         
@@ -258,7 +269,6 @@
         </div>
       </div>
 
-      <!-- 待核銷清單明細區 -->
       <div>
         <h3 class="text-xs font-bold text-slate-700 mb-2">💵 待付款項目核銷明細</h3>
         <div id="admin-data-list" class="space-y-2">
@@ -278,10 +288,16 @@
         <button onclick="closeInvoiceModal()" class="text-slate-400 font-bold p-1">✕</button>
       </div>
 
-      <div class="mb-3 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center">
-        <button type="button" id="start-scan-btn" onclick="toggleModalScanner()" class="w-full bg-emerald-600 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-2">
-          📷 開啟鏡頭掃描電子發票 QR Code
-        </button>
+      <div class="mb-3 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center space-y-2">
+        <div class="grid grid-cols-2 gap-2">
+          <label class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1 cursor-pointer text-center shadow-sm">
+            📸 拍照發票辨識
+            <input type="file" id="modal-qr-file" accept="image/*" class="hidden" onchange="decodeQrFromFile(this, 'modal-invoice-no', 'modal-amount')">
+          </label>
+          <button type="button" id="start-scan-btn" onclick="toggleModalScanner()" class="bg-slate-700 hover:bg-slate-800 text-white font-bold py-2 rounded-xl text-xs">
+            📷 動態鏡頭掃描
+          </button>
+        </div>
         <div id="modal-reader" class="hidden mt-2 rounded-lg overflow-hidden border border-slate-300"></div>
       </div>
 
@@ -427,8 +443,10 @@
       return count || 0;
     }
 
+    // 台灣電子發票 QR Code 精準解析
     function parseInvoiceQr(decodedText) {
       if (!decodedText || decodedText.length < 10) return null;
+      
       const invNo = decodedText.substring(0, 10);
       if (!/^[A-Z]{2}\d{8}$/i.test(invNo)) return null;
 
@@ -441,6 +459,37 @@
       return { invoiceNo: invNo.toUpperCase(), amount: parsedAmount };
     }
 
+    // 🔥 方案 A：拍照上傳照片 100% 解析 QR Code
+    async function decodeQrFromFile(inputElem, targetNoId, targetAmtId) {
+      if (!inputElem.files || inputElem.files.length === 0) return;
+      const file = inputElem.files[0];
+
+      try {
+        const html5Qr = new Html5Qrcode("modal-reader");
+        const decodedText = await html5Qr.scanFile(file, true);
+        const res = parseInvoiceQr(decodedText);
+
+        if (res) {
+          document.getElementById(targetNoId).value = res.invoiceNo;
+          if (res.amount) document.getElementById(targetAmtId).value = res.amount;
+
+          const dupCount = await checkDuplicateInvoiceNo(res.invoiceNo);
+          if (dupCount > 0) {
+            alert(`⚠️ 警告！發票【${res.invoiceNo}】在系統中已存在 ${dupCount} 筆紀錄！`);
+          } else {
+            alert(`✅ 拍照解析成功！\n發票號碼：${res.invoiceNo}\n金額：${res.amount ? 'NT$ ' + res.amount : '請手動確認輸入'}`);
+          }
+        } else {
+          alert('⚠️ 無法解析發票號碼，請重新對準「左側」QR Code 拍照或改為手動輸入。');
+        }
+      } catch (err) {
+        alert('⚠️ 未辨識出發票 QR Code，請確認拍照畫面清晰、無光線遮擋對準左側 QR Code。');
+      } finally {
+        inputElem.value = '';
+      }
+    }
+
+    // 方案 B：動態鏡頭
     async function startCameraScanner(elementId, onSuccess) {
       if (activeScanner) await stopActiveScanner();
 
@@ -448,26 +497,18 @@
       readerElem.classList.remove('hidden');
 
       activeScanner = new Html5Qrcode(elementId);
-      const config = { fps: 15, qrbox: { width: 230, height: 230 }, aspectRatio: 1.0 };
+      const config = { fps: 10, qrbox: { width: 230, height: 230 } };
 
       activeScanner.start(
-        { facingMode: { exact: "environment" } },
+        { facingMode: "environment" },
         config,
         (text) => {
           const res = parseInvoiceQr(text);
           if (res) onSuccess(res);
         }
       ).catch(() => {
-        Html5Qrcode.getCameras().then(cameras => {
-          if (cameras && cameras.length) {
-            let backCam = cameras.find(c => c.label.toLowerCase().includes('back') || c.label.toLowerCase().includes('rear') || c.label.toLowerCase().includes('environment'));
-            const camId = backCam ? backCam.id : cameras[cameras.length - 1].id;
-            activeScanner.start(camId, config, (text) => {
-              const res = parseInvoiceQr(text);
-              if (res) onSuccess(res);
-            });
-          }
-        });
+        alert('鏡頭開啓失敗，請改用「📸 拍照發票辨識」按鈕！');
+        stopActiveScanner();
       });
     }
 
@@ -479,8 +520,6 @@
             activeScanner = null;
             document.getElementById('reg-reader')?.classList.add('hidden');
             document.getElementById('modal-reader')?.classList.add('hidden');
-            document.getElementById('reg-scan-btn').innerText = "📷 掃描隨貨發票左側 QR Code";
-            document.getElementById('start-scan-btn').innerText = "📷 開啟鏡頭掃描電子發票 QR Code";
             resolve();
           }).catch(() => { activeScanner = null; resolve(); });
         } else {
@@ -490,20 +529,18 @@
     }
 
     function startRegisterScan() {
-      const btn = document.getElementById('reg-scan-btn');
       if (activeScanner) {
         stopActiveScanner();
       } else {
-        btn.innerText = "🛑 關閉鏡頭";
         startCameraScanner('reg-reader', async (res) => {
           document.getElementById('reg-invoice-no').value = res.invoiceNo;
           if (res.amount) document.getElementById('amount').value = res.amount;
 
           const dupCount = await checkDuplicateInvoiceNo(res.invoiceNo);
           if (dupCount > 0) {
-            alert(`⚠️ 警告！發票號碼【${res.invoiceNo}】在系統中已存在 ${dupCount} 筆資料！`);
+            alert(`⚠️ 警告！發票號碼【${res.invoiceNo}】已存在 ${dupCount} 筆資料！`);
           } else {
-            alert(`✅ 成功讀取發票！\n發票號碼：${res.invoiceNo}\n金額：${res.amount ? 'NT$ ' + res.amount : '請手動確認輸入'}`);
+            alert(`✅ 感應成功！\n號碼：${res.invoiceNo}\n金額：${res.amount ? 'NT$ ' + res.amount : '請手動輸入'}`);
           }
           stopActiveScanner();
         });
@@ -537,7 +574,7 @@
             status = 'unpaid';
 
             if (!invoiceNo) {
-              alert('⚠️ 請輸入或掃描發票號碼！');
+              alert('⚠️ 請輸入或拍照辨識發票號碼！');
               submitBtn.disabled = false;
               submitBtn.innerText = "確認點收並送出";
               return;
@@ -649,11 +686,9 @@
     }
 
     function toggleModalScanner() {
-      const btn = document.getElementById('start-scan-btn');
       if (activeScanner) {
         stopActiveScanner();
       } else {
-        btn.innerText = "🛑 關閉鏡頭";
         startCameraScanner('modal-reader', async (res) => {
           document.getElementById('modal-invoice-no').value = res.invoiceNo;
           if (res.amount) document.getElementById('modal-amount').value = res.amount;
@@ -693,14 +728,12 @@
       loadPendingInvoices();
     });
 
-    // ==================== 3. 院長對帳與統計報表 logic ====================
     async function loadAdminData() {
       const { data, error } = await supabaseClient.from('cash_log').select('*').order('created_at', { ascending: false });
       if (error) { alert('資料載入失敗'); return; }
 
       cachedAllData = data || [];
 
-      // A. 待處理款項卡片
       const pendingItems = cachedAllData.filter(d => d.status === 'pending_invoice');
       const unpaidItems = cachedAllData.filter(d => d.status === 'unpaid');
 
@@ -709,14 +742,10 @@
       const unpaidTotal = unpaidItems.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
       document.getElementById('stat-unpaid-total').innerText = `NT$ ${unpaidTotal.toLocaleString()}`;
 
-      // B. 各廠商依月份統計結餘款項
       renderSupplierTimeline(unpaidItems);
-
-      // C. 待付款項目核銷清單明細
       renderAdminUnpaidList(unpaidItems);
     }
 
-    // 依付款到期月份 + 廠商進行雙重交叉統計
     function renderSupplierTimeline(unpaidItems) {
       const timelineContainer = document.getElementById('supplier-timeline-list');
       if (unpaidItems.length === 0) {
@@ -724,7 +753,6 @@
         return;
       }
 
-      // 資料分組：月分 ➔ 廠商 ➔ 總金額
       const grouped = {};
       unpaidItems.forEach(item => {
         const monthKey = item.payment_due_date ? item.payment_due_date.substring(0, 7) : '未指定月份';
@@ -735,7 +763,6 @@
         grouped[monthKey][supplierKey] = (grouped[monthKey][supplierKey] || 0) + amt;
       });
 
-      // 排序月份
       const sortedMonths = Object.keys(grouped).sort();
 
       timelineContainer.innerHTML = '';
@@ -769,7 +796,6 @@
       });
     }
 
-    // 渲染待付款核銷清單明細
     function renderAdminUnpaidList(unpaidItems) {
       const container = document.getElementById('admin-data-list');
       if (unpaidItems.length === 0) {
@@ -795,12 +821,10 @@
       });
     }
 
-    // C. 每月財務報表生成
     function generateMonthlyReport() {
       const targetMonth = document.getElementById('report-month').value;
       if (!targetMonth) { alert('請選擇要生成的月份'); return; }
 
-      // 篩選該月份建檔或付款到期的資料
       const monthData = cachedAllData.filter(d => {
         const dateStr = d.created_at ? d.created_at.substring(0, 7) : '';
         const dueStr = d.payment_due_date ? d.payment_due_date.substring(0, 7) : '';
@@ -845,7 +869,6 @@
       document.getElementById('report-result-box').classList.remove('hidden');
     }
 
-    // 匯出 CSV Excel 檔案
     function exportCsvReport() {
       const targetMonth = document.getElementById('report-month').value;
       const monthData = cachedAllData.filter(d => {
