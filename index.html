@@ -23,7 +23,7 @@
 
     <!-- 功能切換頂部導覽列 -->
     <div class="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl mb-5 border border-slate-200">
-      <button id="nav-register" onclick="switchMainTab('register')" class="py-2 text-xs font-bold rounded-lg bg-white text-blue-700 shadow-sm transition">
+      <button id="nav-register" onclick="switchMainTab('register')" class="py-2 text-xs font-bold rounded-lg bg-blue-600 text-white shadow-sm transition">
         📦 現場登記
       </button>
       <button id="nav-invoice" onclick="switchMainTab('invoice')" class="py-2 text-xs font-bold rounded-lg text-slate-600 hover:text-slate-900 transition">
@@ -353,18 +353,34 @@
         html5QrcodeScanner = new Html5Qrcode("reader");
         html5QrcodeScanner.start(
           { facingMode: "environment" },
-          { fps: 10, qrbox: { width: 200, height: 200 } },
+          { fps: 10, qrbox: { width: 220, height: 220 } },
           (decodedText) => {
             if (decodedText && decodedText.length >= 10) {
               const invNo = decodedText.substring(0, 10);
               if (/^[A-Z]{2}\d{8}$/i.test(invNo)) {
                 document.getElementById('modal-invoice-no').value = invNo.toUpperCase();
+                
+                let parsedAmount = null;
+                // 標準格式：第 29-36 碼 16進位金額
                 if (decodedText.length >= 36) {
                   const hexAmt = decodedText.substring(29, 36);
                   const amt = parseInt(hexAmt, 16);
-                  if (!isNaN(amt) && amt > 0) document.getElementById('modal-amount').value = amt;
+                  if (!isNaN(amt) && amt > 0 && amt < 10000000) parsedAmount = amt;
                 }
-                alert('✅ 已感應發票號碼：' + invNo.toUpperCase());
+                // 備用格式：第 21-29 碼
+                if (!parsedAmount && decodedText.length >= 40) {
+                  const altHexAmt = decodedText.substring(21, 29);
+                  const altAmt = parseInt(altHexAmt, 16);
+                  if (!isNaN(altAmt) && altAmt > 0 && altAmt < 10000000) parsedAmount = altAmt;
+                }
+
+                if (parsedAmount) {
+                  document.getElementById('modal-amount').value = parsedAmount;
+                  alert(`✅ 已感應發票！\n號碼：${invNo.toUpperCase()}\n金額：NT$ ${parsedAmount}\n\n(若金額有誤可手動微調)`);
+                } else {
+                  alert(`✅ 已感應發票號碼：${invNo.toUpperCase()}\n請手動輸入金額。`);
+                }
+
                 stopScanner();
               }
             }
