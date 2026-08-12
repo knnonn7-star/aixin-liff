@@ -7,8 +7,9 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- 引入穩定的照片解碼套件 -->
+  <!-- 引入靜態辨識庫與 OCR 文字辨識套件 -->
   <script src="https://unpkg.com/html5-qrcode"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <style>
     @media print {
       body * { visibility: hidden; }
@@ -55,7 +56,7 @@
           <span class="text-2xl">📷</span>
           <div class="text-left">
             <div class="text-base font-bold">櫃檯 / 會計發票補登</div>
-            <div class="text-xs text-amber-100 font-normal">補寄發票對帳（拍照辨識號碼與金額）</div>
+            <div class="text-xs text-amber-100 font-normal">補寄發票對帳（拍照全圖文字與號碼自動辨識）</div>
           </div>
         </div>
         <span class="text-lg group-hover:translate-x-1 transition-transform">➔</span>
@@ -66,7 +67,7 @@
           <span class="text-2xl">📊</span>
           <div class="text-left">
             <div class="text-base font-bold">院長 / 財務統計與月報表</div>
-            <div class="text-xs text-slate-300 font-normal">待付款統計、廠商時間軸結餘、月度報表匯出</div>
+            <div class="text-xs text-slate-300 font-normal">待付款統計、各廠商時間軸明細、匯出 CSV</div>
           </div>
         </div>
         <span class="text-lg group-hover:translate-x-1 transition-transform">➔</span>
@@ -145,16 +146,16 @@
             <p class="text-[11px] text-slate-400 mt-1">無需填寫金額，送出後將自動進入「櫃檯待補發票」對帳清單。</p>
           </div>
 
-          <!-- 模式 B：隨貨發票拍照解析區 -->
+          <!-- 模式 B：隨貨發票全圖文字與條碼辨識 -->
           <div id="doc-invoice-box" class="hidden bg-emerald-50 p-3 rounded-xl border border-emerald-200 space-y-2">
             <div class="flex justify-between items-center">
-              <span class="text-xs font-bold text-emerald-900">🧾 隨貨發票對帳解析</span>
-              <span class="text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded font-bold">免拍照簽收單</span>
+              <span class="text-xs font-bold text-emerald-900">🧾 隨貨發票對帳辨識 (文字/條碼雙辨識)</span>
+              <span id="ocr-status-tag" class="text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded font-bold">免拍照簽收單</span>
             </div>
 
-            <label class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer text-center shadow-sm">
-              📸 拍照發票左側 QR Code 辨識
-              <input type="file" id="reg-qr-file" accept="image/*" class="hidden" onchange="decodeQrFromFile(this, 'reg-invoice-no', 'amount')">
+            <label class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer text-center shadow-sm w-full">
+              📸 拍照整張發票辨識號碼與金額
+              <input type="file" id="reg-qr-file" accept="image/*" class="hidden" onchange="decodeInvoicePhoto(this, 'reg-invoice-no', 'amount')">
             </label>
 
             <div class="grid grid-cols-2 gap-2 pt-1">
@@ -214,14 +215,14 @@
       </div>
 
       <div>
-        <h3 class="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1">📅 2. 各廠商依付款到期月份結餘金額</h3>
+        <h3 class="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1">📅 2. 各廠商依付款到期月份結餘金額明細</h3>
         <div id="supplier-timeline-list" class="space-y-3">
           <p class="text-center text-xs text-slate-400 py-4">分析中...</p>
         </div>
       </div>
 
       <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
-        <h3 class="text-xs font-bold text-slate-800 flex items-center gap-1">📄 3. 每月財務與進貨報表</h3>
+        <h3 class="text-xs font-bold text-slate-800 flex items-center gap-1">📄 3. 每月財務與各廠商進貨報表</h3>
         
         <div class="flex gap-2 items-center">
           <input type="month" id="report-month" class="p-2 border border-slate-300 rounded-lg text-xs bg-white font-bold text-slate-700 flex-1">
@@ -251,14 +252,14 @@
             </div>
 
             <div>
-              <p class="font-bold text-slate-700 mb-1">各廠商進貨小計：</p>
+              <p class="font-bold text-slate-700 mb-1">各廠商進貨與請款小計：</p>
               <ul id="rep-supplier-breakdown" class="space-y-1 text-[11px] text-slate-600 pl-2"></ul>
             </div>
           </div>
 
           <div class="flex gap-2">
             <button onclick="window.print()" class="flex-1 bg-slate-800 text-white font-bold py-2 rounded-lg text-xs">🖨️ 列印報表</button>
-            <button onclick="exportCsvReport()" class="flex-1 bg-emerald-600 text-white font-bold py-2 rounded-lg text-xs">📥 匯出 CSV Excel 檔</button>
+            <button onclick="exportCsvReport()" class="flex-1 bg-emerald-600 text-white font-bold py-2 rounded-lg text-xs">📥 匯出各廠商明細 CSV</button>
           </div>
         </div>
       </div>
@@ -284,8 +285,8 @@
 
       <div class="mb-3 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center space-y-2">
         <label class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer text-center shadow-sm w-full">
-          📸 拍照發票左側 QR Code 辨識
-          <input type="file" id="modal-qr-file" accept="image/*" class="hidden" onchange="decodeQrFromFile(this, 'modal-invoice-no', 'modal-amount')">
+          📸 拍照整張發票辨識號碼與金額
+          <input type="file" id="modal-qr-file" accept="image/*" class="hidden" onchange="decodeInvoicePhoto(this, 'modal-invoice-no', 'modal-amount')">
         </label>
       </div>
 
@@ -429,49 +430,70 @@
       return count || 0;
     }
 
-    // 解析台灣電子發票文字
-    function parseInvoiceQr(decodedText) {
-      if (!decodedText || decodedText.length < 10) return null;
-      
-      const invNo = decodedText.substring(0, 10);
-      if (!/^[A-Z]{2}\d{8}$/i.test(invNo)) return null;
-
-      let parsedAmount = null;
-      if (decodedText.length >= 37) {
-        const hexStr = decodedText.substring(29, 37);
-        const val = parseInt(hexStr, 16);
-        if (!isNaN(val) && val > 0 && val < 50000000) parsedAmount = val;
-      }
-      return { invoiceNo: invNo.toUpperCase(), amount: parsedAmount };
-    }
-
-    // 拍照圖片上傳解析（不閃爍且最穩定）
-    async function decodeQrFromFile(inputElem, targetNoId, targetAmtId) {
+    // 發票文字/條碼全方位雙重 OCR 辨識引擎
+    async function decodeInvoicePhoto(inputElem, targetNoId, targetAmtId) {
       if (!inputElem.files || inputElem.files.length === 0) return;
       const file = inputElem.files[0];
+      const tag = document.getElementById('ocr-status-tag');
+      if (tag) tag.innerText = "🔍 全圖文字解析中...";
 
       try {
-        const html5Qr = new Html5Qrcode("pending-invoice-list");
-        const decodedText = await html5Qr.scanFile(file, false);
-        const res = parseInvoiceQr(decodedText);
+        let detectedNo = null;
+        let detectedAmt = null;
 
-        if (res) {
-          document.getElementById(targetNoId).value = res.invoiceNo;
-          if (res.amount) document.getElementById(targetAmtId).value = res.amount;
+        // 1. 條碼解析關卡
+        try {
+          const html5Qr = new Html5Qrcode("pending-invoice-list");
+          const decodedText = await html5Qr.scanFile(file, false);
+          if (decodedText && decodedText.length >= 10) {
+            const invNo = decodedText.substring(0, 10);
+            if (/^[A-Z]{2}\d{8}$/i.test(invNo)) {
+              detectedNo = invNo.toUpperCase();
+              if (decodedText.length >= 37) {
+                const hexStr = decodedText.substring(29, 37);
+                const val = parseInt(hexStr, 16);
+                if (!isNaN(val) && val > 0) detectedAmt = val;
+              }
+            }
+          }
+        } catch (e) { /* 條碼解析無果，繼續走 OCR */ }
 
-          const dupCount = await checkDuplicateInvoiceNo(res.invoiceNo);
+        // 2. OCR 文字全圖解析關卡 (若號碼尚未抓到)
+        if (!detectedNo) {
+          const result = await Tesseract.recognize(file, 'eng', { logger: m => {} });
+          const text = result.data.text || "";
+          
+          // 正則抓取 2碼英文 + 8碼數字
+          const matchNo = text.match(/[A-Z]{2}[- ]?\d{8}/i);
+          if (matchNo) {
+            detectedNo = matchNo[0].replace(/[- ]/g, '').toUpperCase();
+          }
+
+          // 抓取金額文字數字 (例: 總計 1500, 金額 2000)
+          const matchAmt = text.match(/(?:總計|金額|小計|NT\$?)\s*:?\s*(\d+)/i);
+          if (matchAmt) {
+            detectedAmt = parseInt(matchAmt[1], 10);
+          }
+        }
+
+        if (detectedNo) {
+          document.getElementById(targetNoId).value = detectedNo;
+          if (detectedAmt) document.getElementById(targetAmtId).value = detectedAmt;
+
+          const dupCount = await checkDuplicateInvoiceNo(detectedNo);
           if (dupCount > 0) {
-            alert(`⚠️ 警告！發票【${res.invoiceNo}】在系統中已存在 ${dupCount} 筆紀錄！`);
+            alert(`⚠️ 警告！辨識出的發票號碼【${detectedNo}】已存在 ${dupCount} 筆紀錄！`);
           } else {
-            alert(`✅ 拍照辨識成功！\n發票號碼：${res.invoiceNo}\n金額：${res.amount ? 'NT$ ' + res.amount : '請手動確認金額'}`);
+            alert(`✅ 照片辨識成功！\n發票號碼：${detectedNo}\n金額：${detectedAmt ? 'NT$ ' + detectedAmt : '未抓到金額，請手動確認'}`);
           }
         } else {
-          alert('⚠️ 照片中讀取到的文字非電子發票，請重新拍照對準發票「左側」的 QR Code。');
+          alert('⚠️ 未抓取到發票號碼，請手動鍵入發票號碼（例：AB12345678）。');
         }
       } catch (err) {
-        alert('⚠️ 無法解析發票 QR Code，請確認照片清晰、無強光反射，並對準左側 QR Code 拍照。');
+        alert('⚠️ 辨識過程發生問題，請直接手動填寫發票資訊。');
       } finally {
         inputElem.value = '';
+        if (tag) tag.innerText = "免拍照簽收單";
       }
     }
 
@@ -777,25 +799,47 @@
       document.getElementById('report-result-box').classList.remove('hidden');
     }
 
+    // 匯出 CSV 報表（包含廠商完整細項）
     function exportCsvReport() {
       const targetMonth = document.getElementById('report-month').value;
+      if (!targetMonth) { alert('請選擇月份'); return; }
+
       const monthData = cachedAllData.filter(d => {
         const dateStr = d.created_at ? d.created_at.substring(0, 7) : '';
-        return dateStr === targetMonth;
+        const dueStr = d.payment_due_date ? d.payment_due_date.substring(0, 7) : '';
+        return dateStr === targetMonth || dueStr === targetMonth;
       });
 
       if (monthData.length === 0) { alert('該月份無資料可匯出'); return; }
 
-      let csvContent = "\uFEFF建立時間,登記類型,廠商/分類,金額,發票號碼,到期日,備註,狀態\n";
+      let csvRows = [];
+      csvRows.push(["建檔時間", "登記類型", "廠商名稱", "分類項目", "金額(NT$)", "發票號碼", "付款到期日", "點收人員", "備註", "請款狀態"]);
+
       monthData.forEach(d => {
-        csvContent += `"${d.created_at || ''}","${d.type || ''}","${d.supplier || d.category || ''}","${d.amount || 0}","${d.invoice_no || ''}","${d.payment_due_date || ''}","${d.note || ''}","${d.status || ''}"\n`;
+        const row = [
+          d.created_at ? new Date(d.created_at).toLocaleString('zh-TW') : '',
+          d.type || '',
+          d.supplier || '',
+          d.category || '',
+          d.amount || 0,
+          d.invoice_no || '',
+          d.payment_due_date || '',
+          d.user_name || '',
+          (d.note || '').replace(/"/g, '""'),
+          d.status || ''
+        ];
+        csvRows.push(row.map(val => `"${val}"`).join(','));
       });
 
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const csvString = "\uFEFF" + csvRows.join("\n");
+      const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `愛欣診所財務月報_${targetMonth}.csv`;
+      link.setAttribute("href", url);
+      link.setAttribute("download", `愛欣診所財務進貨報表_${targetMonth}.csv`);
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
     }
 
     async function markAsPaid(id) {
