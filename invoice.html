@@ -1,23 +1,13 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>愛欣診所 - 櫃檯/會計發票補登專區</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- 引入鏡頭 QR Code 掃描套件 -->
-  <script src="https://unpkg.com/html5-qrcode"></script>
-</head>
-<body class="bg-slate-100 min-h-screen text-slate-800 p-4">
-
-  <header class="max-w-xl mx-auto bg-white rounded-2xl p-4 shadow-sm mb-4 flex justify-between items-center">
-    <div>
-      <h1 class="font-bold text-lg text-slate-800">🏥 愛欣診所 - 發票補登專區</h1>
-      <p class="text-xs text-slate-500">櫃檯與會計進貨發票核對</p>
-    </div>
+<header class="max-w-xl mx-auto bg-white rounded-2xl p-4 shadow-sm mb-4 flex justify-between items-center">
+  <div>
+    <h1 class="font-bold text-lg text-slate-800">🏥 愛欣診所 - 發票補登專區</h1>
+    <p class="text-xs text-slate-500">櫃檯與會計進貨發票核對</p>
+  </div>
+  <div class="flex gap-2">
+    <a href="admin.html" class="bg-slate-800 hover:bg-slate-900 text-white text-xs px-3 py-2 rounded-xl font-bold flex items-center">📊 院長後台</a>
     <button onclick="loadPendingData()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs px-3 py-2 rounded-xl font-bold">🔄 重新整理</button>
-  </header>
+  </div>
+</header>
 
   <main class="max-w-xl mx-auto space-y-3" id="list-container">
     <div class="text-center py-8 text-slate-400">資料載入中...</div>
