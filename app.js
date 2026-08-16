@@ -1,13 +1,35 @@
-const LIFF_ID = '2011071479-1rEMTEv0'; 
+ const LIFF_ID = '2011071479-1rEMTEv0'; 
 const SUPABASE_URL = 'https://bvbknaaljuwxrzvoqcrt.supabase.co'; 
 const SUPABASE_ANON_KEY = 'sb_publishable_fPdr9TBzrw9Ycb6GEpF7UA_zeLqblfo'; 
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// 📍 設定診所經緯度與打卡容許半徑 (此處為預設值，可隨時調整)
+const CLINIC_LOCATION = {
+  lat: 22.6273,      // 診所緯度
+  lng: 120.3014,     // 診所經度
+  radiusMeters: 100  // 允許打卡半徑：100 公尺以內
+};
 
 let currentUser = { lineUserId: '', displayName: '匿名同仁', empId: null };
 let cachedAllData = [];
 let cachedEmployees = [];
 let cachedShifts = [];
-let currentGps = { lat: null, lng: null, inRange: true };
+let currentGps = { lat: null, lng: null };
+
+// 距離計算演算法 (單位：公尺)
+function getDistanceInMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371e3; // 地球半徑 (公尺)
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
 
 // 主入口導覽切換
 function openMainSection(section) {
@@ -68,16 +90,27 @@ async function initLiff() {
   setInterval(updateClock, 1000);
   updateClock();
 
+  // 取得 GPS 精準定位
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
       pos => {
         currentGps.lat = pos.coords.latitude;
         currentGps.lng = pos.coords.longitude;
-        document.getElementById('gps-status').innerText = "📍 GPS 就緒 (診所範圍)";
+        
+        const dist = getDistanceInMeters(currentGps.lat, currentGps.lng, CLINIC_LOCATION.lat, CLINIC_LOCATION.lng);
+        const statusElem = document.getElementById('gps-status');
+        if (dist <= CLINIC_LOCATION.radiusMeters) {
+          statusElem.innerText = "📍 GPS 就緒 (診所範圍內)";
+          statusElem.className = "bg-emerald-800/80 px-2 py-0.5 rounded-full text-[10px] text-emerald-200";
+        } else {
+          statusElem.innerText = `📍 距離診所約 ${Math.round(dist)} 公尺`;
+          statusElem.className = "bg-amber-800/80 px-2 py-0.5 rounded-full text-[10px] text-amber-200";
+        }
       },
       err => {
-        document.getElementById('gps-status').innerText = "📍 診所標準打卡";
-      }
+        document.getElementById('gps-status').innerText = "⚠️ 未開啟定位權限";
+      },
+      { enableHighAccuracy: true }
     );
   }
 
@@ -115,22 +148,29 @@ async function syncEmployeeRecord() {
   const { data } = await supabaseClient.from('clinic_employees').select('*').eq('name', currentUser.displayName);
   if (data && data.length > 0) {
     currentUser.empId = data[0].id;
-  } else {
-    const { data: newEmp } = await supabaseClient.from('clinic_employees').insert([{
-      name: currentUser.displayName,
-      line_user_id: currentUser.lineUserId || null,
-      role: 'doctor',
-      salary_type: 'monthly',
-      base_salary: 80000,
-      license_allowance: 20000
-    }]).select();
-    if (newEmp && newEmp.length > 0) currentUser.empId = newEmp[0].id;
   }
 }
 
-// 打卡
+// 嚴格 GPS 打卡驗證
 async function punchAttendance(type) {
   if (!currentUser.empId) await syncEmployeeRecord();
+
+  if (!currentGps.lat || !currentGps.lng) {
+    alert("⚠️ 無法取得您的 GPS 定位，請開啟手機/平板的「定位服務」後再試！");
+    return;
+  }
+
+  // 驗證是否在診所範圍內
+  const distance = getDistanceInMeters(
+    currentGps.lat, currentGps.lng, 
+    CLINIC_LOCATION.lat, CLINIC_LOCATION.lng
+  );
+
+  if (distance > CLINIC_LOCATION.radiusMeters) {
+    alert(`❌ 打卡失敗！\n您目前距離診所約 ${Math.round(distance)} 公尺，超出允許範圍 (${CLINIC_LOCATION.radiusMeters} 公尺內)。`);
+    return;
+  }
+
   const btn = document.getElementById(`btn-punch-${type}`);
   btn.disabled = true;
 
@@ -146,7 +186,7 @@ async function punchAttendance(type) {
   if (error) {
     alert('打卡失敗：' + error.message);
   } else {
-    alert(`✅ ${type === 'in' ? '上班' : '下班'}打卡成功！\n時間：${new Date().toLocaleTimeString('zh-TW')}`);
+    alert(`✅ ${type === 'in' ? '上班' : '下班'}打卡成功！\n地點：愛欣診所現場`);
     loadTodayAttendance();
   }
 }
