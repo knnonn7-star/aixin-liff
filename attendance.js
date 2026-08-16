@@ -23,7 +23,6 @@ function openMainSection(section) {
   document.getElementById('sec-hr').classList.add('hidden');
   document.getElementById('sec-finance').classList.add('hidden');
   document.getElementById(`sec-${section}`).classList.remove('hidden');
-
   if (section === 'hr') { loadMySchedule(); initHrDefaults(); }
   if (section === 'finance') { initFinanceDefaults(); }
 }
@@ -104,7 +103,7 @@ async function syncEmployeeRecord() {
 async function punchAttendance(type) {
   if (!currentUser.empId) await syncEmployeeRecord();
   if (!currentGps.lat || !currentGps.lng) {
-    alert("⚠️ 無法取得 GPS 定位，請開啟手機定位權限！");
+    alert("⚠️ 無法取得 GPS 定位，請開啟定位權限！");
     return;
   }
   const dist = getDistanceInMeters(currentGps.lat, currentGps.lng, CLINIC_LOCATION.lat, CLINIC_LOCATION.lng);
