@@ -29,24 +29,29 @@
       <p class="text-xs text-slate-500 mt-0.5">LINE 整合式打卡、人事排班與帳務管理</p>
     </div>
 
-    <!-- 登入資訊 -->
-    <div id="user-info-bar" class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 flex justify-between items-center text-xs">
-      <span class="text-slate-600 font-medium">當前登入者：</span>
-      <span id="user-name" class="font-bold text-slate-800 bg-slate-200 px-2.5 py-0.5 rounded-md">載入中...</span>
-    </div>
-
-    <!-- 第一層：首頁 -->
+    <!-- ==================== 第一層：首頁 ==================== -->
     <div id="sec-main-home" class="space-y-4">
       
-      <!-- 頂部打卡面板 -->
+      <!-- 🔥 整合版：打卡面板（包含同仁身分、時間、狀態） -->
       <section class="bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-4 rounded-2xl shadow-md text-center space-y-2">
-        <div class="flex justify-between items-center text-xs text-emerald-100 px-1">
-          <span id="clock-date">2026 年 -- 月 -- 日</span>
+        
+        <!-- 頂部資訊列：身分 + GPS 狀態 -->
+        <div class="flex justify-between items-center text-xs text-emerald-100 px-1 border-b border-emerald-500/30 pb-1.5">
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-200">👤</span>
+            <span id="user-name" class="font-bold text-white bg-emerald-800/80 px-2 py-0.5 rounded-md">載入中...</span>
+          </div>
           <span id="gps-status" class="bg-emerald-800/80 px-2 py-0.5 rounded-full text-[10px] text-emerald-200">📍 定位偵測中</span>
         </div>
-        <div class="text-3xl font-black tracking-wider py-1" id="clock-time">00:00:00</div>
+
+        <!-- 中間：日期與即時大時鐘 -->
+        <div class="py-1">
+          <div class="text-xs text-emerald-100" id="clock-date">2026 年 -- 月 -- 日</div>
+          <div class="text-3xl font-black tracking-wider my-0.5" id="clock-time">00:00:00</div>
+        </div>
         
-        <div class="grid grid-cols-2 gap-2.5 pt-1">
+        <!-- 上下班打卡按鈕 -->
+        <div class="grid grid-cols-2 gap-2.5 pt-0.5">
           <button onclick="punchAttendance('in')" id="btn-punch-in" class="bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-white font-bold py-3 rounded-xl shadow flex items-center justify-center gap-1.5 transition">
             <span class="text-lg">☀️</span>
             <span class="text-xs">上班打卡</span>
@@ -57,8 +62,9 @@
           </button>
         </div>
 
-        <div class="pt-2 border-t border-emerald-500/40 flex justify-between items-center text-[11px] text-emerald-100">
-          <span id="today-punch-summary">今日狀態：載入中...</span>
+        <!-- 底部出勤紀錄摘要 -->
+        <div class="pt-2 border-t border-emerald-500/30 flex justify-between items-center text-[11px] text-emerald-100">
+          <span id="today-punch-summary">今日出勤：載入中...</span>
           <span class="text-[10px] text-emerald-200">免打卡鐘・即時定位</span>
         </div>
       </section>
@@ -331,7 +337,7 @@
         <input type="hidden" id="modal-id">
         <div>
           <label class="block text-xs font-bold text-slate-600 mb-1">發票號碼</label>
-          <input type="text" id="modal-invoice-no" placeholder="例：AB12345678" class="w-full p-2 border rounded-lg text-xs font-mono" required>
+          <input type="text" id="modal-invoice-no" placeholder="例：AB12345678" class="w-full p-2 border rounded-lg text-xs font-mono bg-white">
         </div>
         <div>
           <label class="block text-xs font-bold text-slate-600 mb-1">發票實際總金額 (NT$)</label>
@@ -349,7 +355,6 @@
     </div>
   </div>
 
-  <!-- 引入獨立腳本 -->
   <script src="app.js"></script>
 </body>
 </html>
