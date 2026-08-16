@@ -168,7 +168,7 @@ async function loadTodayAttendance() {
     const tStr = new Date(last.punch_time).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
     summary.innerText = `今日已打卡 ${data.length} 次 (最後：${last.punch_type === 'in' ? '上班' : '下班'} ${tStr})`;
   } else {
-    summary.innerText = "今日狀態：尚未打卡";
+    summary.innerText = "今日出勤：尚未打卡";
   }
 }
 
@@ -513,7 +513,7 @@ async function processInvoiceImage(inputElem, targetNoId, targetAmtId, statusEle
 
       const dupCount = await checkDuplicateInvoiceNo(detected.invoiceNo);
       if (dupCount > 0) {
-        alert(`⚠️ 警告！發票號碼【${detected.invoiceNo}】已存在 ${dupCount} 筆資料！`);
+        alert(`⚠️ 警告！發票號碼【${detected.invoiceNo}】在系統中已存在 ${dupCount} 筆資料！`);
       } else {
         alert(`✅ 辨識成功！\n發票號碼：${detected.invoiceNo}\n金額：${detected.amount ? 'NT$ ' + detected.amount : '請確認金額'}`);
       }
