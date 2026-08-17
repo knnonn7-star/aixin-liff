@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   
-  <!-- LINE 連結預覽極簡化設定 (Open Graph) -->
   <title>愛欣診所管理系統</title>
   <meta property="og:title" content="愛欣診所管理系統">
   <meta property="og:description" content="點擊進入系統">
@@ -29,26 +28,29 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     }
 
-    /* A4 橫向列印專用樣式 */
+    /* A4 橫向標準列印專用樣式 */
     @media print {
       @page {
         size: A4 landscape;
-        margin: 8mm;
+        margin: 5mm;
       }
-      body {
-        background-color: white !important;
-        color: black !important;
-        padding: 0 !important;
+      body * {
+        visibility: hidden !important;
       }
-      header, #sub-page-header, #sec-main-home, #sec-finance, #hr-sec-myschedule, #hr-sec-request, .no-print, #user-req-modal, #shift-edit-modal, #invoice-modal {
-        display: none !important;
+      #a4-print-modal, #a4-print-modal * {
+        visibility: visible !important;
       }
-      #sec-hr, #hr-sec-scheduling {
-        display: block !important;
+      #a4-print-modal {
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
         width: 100% !important;
+        background: white !important;
+        padding: 0 !important;
+        margin: 0 !important;
       }
-      #print-area {
-        display: block !important;
+      .no-print {
+        display: none !important;
       }
     }
   </style>
@@ -150,7 +152,7 @@
         <button id="hr-tab-scheduling" onclick="switchHrTab('scheduling')" class="py-2 rounded-lg hover:text-slate-900 transition">👩‍⚕️ 護理長排班</button>
       </div>
 
-      <!-- 分頁 1: 我的班表 (含政府法定特休、國定假、例休、工時折算儀表板) -->
+      <!-- 分頁 1: 我的班表 -->
       <div id="hr-sec-myschedule" class="space-y-3">
         <div class="bg-gradient-to-br from-indigo-900 via-indigo-800 to-slate-900 text-white p-3.5 rounded-2xl shadow-md space-y-2.5">
           <div class="flex justify-between items-center border-b border-indigo-700/60 pb-1.5">
@@ -208,7 +210,7 @@
         </div>
       </div>
 
-      <!-- 分頁 2: 全員預約看板 (即時同步全員預約) -->
+      <!-- 分頁 2: 全員預約看板 -->
       <div id="hr-sec-request" class="hidden space-y-3">
         <div class="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2">
           <div class="flex justify-between items-center pb-1 border-b border-slate-100">
@@ -233,7 +235,7 @@
         </div>
       </div>
 
-      <!-- 分頁 3: 護理長排班中心 (含A4列印按鈕) -->
+      <!-- 分頁 3: 護理長排班中心 -->
       <div id="hr-sec-scheduling" class="hidden space-y-4">
         <div class="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm no-print">
           <div>
@@ -242,8 +244,8 @@
           </div>
           <div class="flex items-center gap-1.5">
             <input type="month" id="admin-sch-month" onchange="loadScheduleCalendar()" class="border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold text-indigo-900 bg-indigo-50">
-            <button onclick="runNationalHolidayLottery()" class="bg-amber-500 hover:bg-amber-600 text-white font-bold px-2 py-1 rounded-lg text-xs shadow-sm">🎲 國定假日抽籤</button>
-            <button onclick="printScheduleA4()" class="bg-slate-900 hover:bg-slate-800 text-white font-bold px-2.5 py-1 rounded-lg text-xs shadow-sm flex items-center gap-1">🖨️ A4列印</button>
+            <button onclick="runNationalHolidayLottery()" class="bg-amber-500 hover:bg-amber-600 text-white font-bold px-2 py-1 rounded-lg text-xs shadow-sm">🎲 國定抽籤</button>
+            <button onclick="openA4PrintPreview()" class="bg-slate-900 hover:bg-slate-800 text-white font-bold px-2.5 py-1 rounded-lg text-xs shadow-sm flex items-center gap-1">🖨️ A4列印</button>
           </div>
         </div>
 
@@ -257,7 +259,6 @@
           <div id="nurse-code-tags" class="flex flex-wrap gap-1.5 mt-1.5"></div>
         </div>
 
-        <!-- 畫面預覽月曆 -->
         <div class="bg-white p-2 rounded-xl border border-slate-200 shadow-sm no-print">
           <div class="grid grid-cols-7 gap-1 text-center font-bold text-[11px] text-slate-600 mb-1">
             <span class="text-rose-500 py-1">週日</span>
@@ -270,9 +271,6 @@
           </div>
           <div id="calendar-grid" class="grid grid-cols-7 gap-1"></div>
         </div>
-
-        <!-- A4 列印專用排版容器 (列印時呈現高密度標準表格) -->
-        <div id="print-area" class="hidden"></div>
       </div>
 
     </section>
@@ -310,19 +308,16 @@
               </div>
             </div>
 
-            <!-- 進貨專用：廠商名稱 -->
             <div id="supplier-group">
               <label class="block text-slate-600 font-bold mb-1">進貨廠商名稱</label>
               <input type="text" id="supplier" placeholder="例如：裕利、杏全、台灣大塚" class="w-full border rounded-xl p-2 font-bold bg-slate-50 border-slate-300">
             </div>
 
-            <!-- 零用金專用：分類 -->
             <div id="category-group" class="hidden">
               <label class="block text-slate-600 font-bold mb-1">收支項目分類</label>
               <select id="category" class="w-full border rounded-xl p-2 font-bold bg-slate-50 border-slate-300"></select>
             </div>
 
-            <!-- 進貨單據模式 -->
             <div id="delivery-doc-mode-section" class="space-y-2 pt-1 border-t border-slate-100">
               <label class="block text-slate-600 font-bold">進貨憑證狀況</label>
               <div class="grid grid-cols-2 gap-2">
@@ -335,13 +330,11 @@
               </div>
             </div>
 
-            <!-- 簽收單上傳區 -->
             <div id="doc-receipt-box">
               <label class="block text-slate-600 font-bold mb-1">拍照上傳簽收單照片</label>
               <input type="file" id="receipt" accept="image/*" capture="environment" class="w-full border rounded-xl p-1.5 text-xs bg-slate-50 border-slate-300">
             </div>
 
-            <!-- 發票與金額輸入/辨識區 (加入即時查重防呆) -->
             <div id="doc-invoice-box" class="hidden space-y-2 p-2.5 bg-emerald-50/60 rounded-xl border border-emerald-200">
               <div class="flex justify-between items-center">
                 <span class="font-bold text-emerald-900 text-xs">📷 發票智能辨識 / 手動校正</span>
@@ -397,13 +390,11 @@
             </div>
           </div>
 
-          <!-- 廠商應付帳款折疊清單 -->
           <div class="space-y-1.5">
             <span class="font-bold text-slate-700 text-xs">🗓️ 各月份廠商應付帳款結餘：</span>
             <div id="supplier-timeline-list" class="space-y-2"></div>
           </div>
 
-          <!-- 月報統計與雙軌口徑選擇 -->
           <div class="pt-2 border-t border-slate-100 space-y-2">
             <div class="flex items-center justify-between gap-1 text-[11px] font-bold text-slate-600 bg-slate-50 p-1.5 rounded-lg">
               <span>統計口徑：</span>
@@ -418,7 +409,6 @@
             </div>
           </div>
 
-          <!-- 月報統計結果顯示區 -->
           <div id="report-result-box" class="hidden bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2 text-xs">
             <div class="flex justify-between font-bold text-slate-800 border-b pb-1">
               <span id="report-title">財務月報</span>
@@ -436,7 +426,6 @@
             </div>
           </div>
 
-          <!-- 待核銷付款清單 -->
           <div class="space-y-1.5 pt-2 border-t border-slate-100">
             <span class="font-bold text-slate-700 text-xs">💵 待付款核銷明細：</span>
             <div id="admin-data-list" class="space-y-2"></div>
@@ -451,7 +440,37 @@
 
   <!-- ==================== 彈窗元件 ==================== -->
 
-  <!-- 1. 護理師預約排班彈窗 -->
+  <!-- 1. 全螢幕 A4 列印與預覽彈窗 (跨平台支援 LINE / iPad / 電腦) -->
+  <div id="a4-print-modal" class="hidden fixed inset-0 bg-slate-900/80 z-50 overflow-y-auto p-2 sm:p-4 flex flex-col items-center">
+    <div class="w-full max-w-5xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col my-auto border border-slate-300">
+      
+      <!-- 控制列 (列印時自動隱藏) -->
+      <div class="bg-slate-800 text-white p-3 flex justify-between items-center no-print">
+        <div class="flex items-center space-x-2">
+          <span class="text-lg">🖨️</span>
+          <span class="font-bold text-sm">A4 橫向排班表列印預覽</span>
+        </div>
+        <div class="flex items-center space-x-2">
+          <button onclick="triggerNativePrint()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs shadow-sm flex items-center gap-1">
+            🖨️ 直接列印
+          </button>
+          <button onclick="openInExternalBrowser()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-1.5 rounded-lg text-xs shadow-sm flex items-center gap-1">
+            🌐 在 Safari/外部瀏覽器開啟
+          </button>
+          <button onclick="closeA4PrintModal()" class="bg-slate-700 hover:bg-slate-600 text-white font-bold px-2.5 py-1.5 rounded-lg text-xs">
+            ✕ 關閉
+          </button>
+        </div>
+      </div>
+
+      <!-- A4 橫向列印本體內容容器 -->
+      <div id="a4-printable-content" class="p-4 bg-white overflow-x-auto">
+        <!-- 動態產生高密度 A4 橫向表格 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. 護理師預約排班彈窗 -->
   <div id="user-req-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 no-print">
     <div class="bg-white rounded-2xl max-w-xs w-full p-4 space-y-3 shadow-2xl border border-slate-100 text-xs">
       <div class="flex justify-between items-center border-b pb-2">
@@ -483,7 +502,7 @@
     </div>
   </div>
 
-  <!-- 2. 護理長設定班別與工時彈窗 -->
+  <!-- 3. 護理長設定班別與工時彈窗 -->
   <div id="shift-edit-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 no-print">
     <div class="bg-white rounded-2xl max-w-sm w-full p-4 space-y-3 shadow-2xl border border-slate-100 text-xs">
       <div class="flex justify-between items-center border-b pb-2">
@@ -502,7 +521,7 @@
     </div>
   </div>
 
-  <!-- 3. 發票補登彈窗 -->
+  <!-- 4. 發票補登彈窗 -->
   <div id="invoice-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 no-print">
     <div class="bg-white rounded-2xl max-w-sm w-full p-4 space-y-3 shadow-2xl border border-slate-100">
       <div class="flex justify-between items-center border-b pb-2">
