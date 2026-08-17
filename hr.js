@@ -6,7 +6,7 @@ let cachedMonthLotteries = [];
 let editingDate = null;
 let userReqDate = null;
 
-// 3 大核心班別 (已刪除「開門小白班」)
+// 3 大核心班別
 const SHIFT_TYPES = ['未排班', '開門白班', '正常白班', '正常晚班'];
 
 // 5 種標準工時 (小時)
@@ -424,35 +424,13 @@ function closeUserReqModal() {
   userReqDate = null;
 }
 
+// 送出排休需求 (已取消週一三五最多2次的限制)
 async function submitUserDayRequest() {
   if (!userReqDate) return;
 
   const selectedType = document.querySelector('input[name="user-req-type"]:checked')?.value || 'off';
   const reason = document.getElementById('user-req-reason').value;
   const targetMonth = document.getElementById('req-target-month').value;
-  const dayOfWeek = new Date(userReqDate).getDay();
-
-  const isNurse = isDialysisNurse(currentUser.displayName, currentUser.role);
-
-  if (selectedType === 'off' && isNurse) {
-    if (dayOfWeek === 1 || dayOfWeek === 3 || dayOfWeek === 5) {
-      const { data: myReqs } = await supabaseClient.from('clinic_schedule_requests')
-        .select('*')
-        .eq('employee_id', currentUser.empId)
-        .eq('target_month', targetMonth)
-        .eq('request_type', 'off');
-
-      const mwfCount = (myReqs || []).filter(r => {
-        const d = new Date(r.request_date).getDay();
-        return (d === 1 || d === 3 || d === 5) && r.request_date !== userReqDate;
-      }).length;
-
-      if (mwfCount >= 2 && currentUser.displayName !== '陳慧倪') {
-        alert('🚨 預約上限：每位透析護理師每月「星期一、三、五」最多僅能預約 2 次排休！');
-        return;
-      }
-    }
-  }
 
   const isFixed = isFixedStaff(currentUser.displayName);
   const noteReason = isFixed ? `特休/年休 (${reason || '自排'})` : (selectedType === 'abroad' ? `✈️出國 (${reason || '國外行程'})` : reason);
@@ -789,7 +767,6 @@ function printScheduleA4() {
 
   const dialysisNurses = cachedEmployees.filter(e => isDialysisNurse(e.name, e.role));
 
-  // 構建 A4 橫向高密度排版表格
   let tableHeaderCols = '<th class="border border-black p-1 bg-slate-200 text-xs w-20">姓名/日期</th>';
   for (let d = 1; d <= totalDays; d++) {
     const dayStr = `${monthStr}-${String(d).padStart(2, '0')}`;
@@ -866,6 +843,5 @@ function printScheduleA4() {
     </div>
   `;
 
-  // 觸發瀏覽器列印
   window.print();
 }
