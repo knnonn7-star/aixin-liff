@@ -150,7 +150,7 @@
         <button id="hr-tab-scheduling" onclick="switchHrTab('scheduling')" class="py-2 rounded-lg hover:text-slate-900 transition">👩‍⚕️ 護理長排班</button>
       </div>
 
-      <!-- 分頁 1: 我的班表 -->
+      <!-- 分頁 1: 我的班表 (含政府法定特休、國定假、例休、工時折算儀表板) -->
       <div id="hr-sec-myschedule" class="space-y-3">
         <div class="bg-gradient-to-br from-indigo-900 via-indigo-800 to-slate-900 text-white p-3.5 rounded-2xl shadow-md space-y-2.5">
           <div class="flex justify-between items-center border-b border-indigo-700/60 pb-1.5">
@@ -208,7 +208,7 @@
         </div>
       </div>
 
-      <!-- 分頁 2: 全員預約看板 -->
+      <!-- 分頁 2: 全員預約看板 (即時同步全員預約) -->
       <div id="hr-sec-request" class="hidden space-y-3">
         <div class="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2">
           <div class="flex justify-between items-center pb-1 border-b border-slate-100">
@@ -233,7 +233,7 @@
         </div>
       </div>
 
-      <!-- 分頁 3: 護理長排班中心 -->
+      <!-- 分頁 3: 護理長排班中心 (含A4列印按鈕) -->
       <div id="hr-sec-scheduling" class="hidden space-y-4">
         <div class="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm no-print">
           <div>
@@ -257,6 +257,7 @@
           <div id="nurse-code-tags" class="flex flex-wrap gap-1.5 mt-1.5"></div>
         </div>
 
+        <!-- 畫面預覽月曆 -->
         <div class="bg-white p-2 rounded-xl border border-slate-200 shadow-sm no-print">
           <div class="grid grid-cols-7 gap-1 text-center font-bold text-[11px] text-slate-600 mb-1">
             <span class="text-rose-500 py-1">週日</span>
@@ -270,6 +271,7 @@
           <div id="calendar-grid" class="grid grid-cols-7 gap-1"></div>
         </div>
 
+        <!-- A4 列印專用排版容器 (列印時呈現高密度標準表格) -->
         <div id="print-area" class="hidden"></div>
       </div>
 
@@ -308,16 +310,19 @@
               </div>
             </div>
 
+            <!-- 進貨專用：廠商名稱 -->
             <div id="supplier-group">
               <label class="block text-slate-600 font-bold mb-1">進貨廠商名稱</label>
               <input type="text" id="supplier" placeholder="例如：裕利、杏全、台灣大塚" class="w-full border rounded-xl p-2 font-bold bg-slate-50 border-slate-300">
             </div>
 
+            <!-- 零用金專用：分類 -->
             <div id="category-group" class="hidden">
               <label class="block text-slate-600 font-bold mb-1">收支項目分類</label>
               <select id="category" class="w-full border rounded-xl p-2 font-bold bg-slate-50 border-slate-300"></select>
             </div>
 
+            <!-- 進貨單據模式 -->
             <div id="delivery-doc-mode-section" class="space-y-2 pt-1 border-t border-slate-100">
               <label class="block text-slate-600 font-bold">進貨憑證狀況</label>
               <div class="grid grid-cols-2 gap-2">
@@ -330,22 +335,25 @@
               </div>
             </div>
 
+            <!-- 簽收單上傳區 -->
             <div id="doc-receipt-box">
               <label class="block text-slate-600 font-bold mb-1">拍照上傳簽收單照片</label>
               <input type="file" id="receipt" accept="image/*" capture="environment" class="w-full border rounded-xl p-1.5 text-xs bg-slate-50 border-slate-300">
             </div>
 
+            <!-- 發票與金額輸入/辨識區 (加入即時查重防呆) -->
             <div id="doc-invoice-box" class="hidden space-y-2 p-2.5 bg-emerald-50/60 rounded-xl border border-emerald-200">
               <div class="flex justify-between items-center">
-                <span class="font-bold text-emerald-900 text-xs">📷 發票智能辨識</span>
-                <span id="reg-ocr-status" class="text-[10px] text-emerald-700">就緒</span>
+                <span class="font-bold text-emerald-900 text-xs">📷 發票智能辨識 / 手動校正</span>
+                <span id="reg-ocr-status" class="text-[10px] text-emerald-700 font-semibold">就緒</span>
               </div>
-              <input type="file" id="reg-invoice-file" accept="image/*" capture="environment" onchange="processInvoiceImage(this, 'reg-invoice-no', 'amount', 'reg-ocr-status')" class="w-full border rounded-lg p-1 text-[11px] bg-white border-emerald-300">
+              <input type="file" id="reg-invoice-file" accept="image/*" capture="environment" onchange="processInvoiceImageWithVerification(this, 'reg-invoice-no', 'amount', 'reg-ocr-status')" class="w-full border rounded-lg p-1 text-[11px] bg-white border-emerald-300">
               
               <div class="grid grid-cols-2 gap-2">
                 <div>
                   <label class="block text-slate-600 font-bold mb-0.5">發票號碼 (10碼)</label>
-                  <input type="text" id="reg-invoice-no" placeholder="AB12345678" class="w-full border rounded-lg p-1.5 font-mono uppercase bg-white border-slate-300">
+                  <input type="text" id="reg-invoice-no" onblur="checkDuplicateInvoice(this.value, 'reg-inv-warn')" placeholder="AB12345678" class="w-full border rounded-lg p-1.5 font-mono uppercase bg-white border-slate-300">
+                  <span id="reg-inv-warn" class="text-[9px] text-rose-600 font-bold hidden block"></span>
                 </div>
                 <div>
                   <label class="block text-slate-600 font-bold mb-0.5">發票總金額 (NT$)</label>
@@ -374,9 +382,10 @@
         </div>
       </div>
 
-      <!-- 分頁 3: 應付帳款與月結報表 -->
+      <!-- 分頁 3: 應付帳款與雙軌月結報表 -->
       <div id="fin-sec-report" class="hidden space-y-3">
         <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+          
           <div class="grid grid-cols-2 gap-2 text-center">
             <div class="bg-blue-50 p-2.5 rounded-xl border border-blue-100">
               <span class="text-[10px] text-blue-600 font-bold">待補發票總數</span>
@@ -388,12 +397,20 @@
             </div>
           </div>
 
+          <!-- 廠商應付帳款折疊清單 -->
           <div class="space-y-1.5">
             <span class="font-bold text-slate-700 text-xs">🗓️ 各月份廠商應付帳款結餘：</span>
             <div id="supplier-timeline-list" class="space-y-2"></div>
           </div>
 
+          <!-- 月報統計與雙軌口徑選擇 -->
           <div class="pt-2 border-t border-slate-100 space-y-2">
+            <div class="flex items-center justify-between gap-1 text-[11px] font-bold text-slate-600 bg-slate-50 p-1.5 rounded-lg">
+              <span>統計口徑：</span>
+              <label class="cursor-pointer"><input type="radio" name="report-basis" value="event_date" checked onchange="generateMonthlyReport()"> 依進貨發生日</label>
+              <label class="cursor-pointer"><input type="radio" name="report-basis" value="due_date" onchange="generateMonthlyReport()"> 依付款到期日</label>
+            </div>
+
             <div class="flex items-center gap-2">
               <input type="month" id="report-month" class="border rounded-xl p-1.5 text-xs font-bold bg-slate-50 border-slate-300">
               <button onclick="generateMonthlyReport()" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1.5 rounded-xl text-xs shadow-xs">📊 產生月報</button>
@@ -401,15 +418,17 @@
             </div>
           </div>
 
+          <!-- 月報統計結果顯示區 -->
           <div id="report-result-box" class="hidden bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2 text-xs">
             <div class="flex justify-between font-bold text-slate-800 border-b pb-1">
               <span id="report-title">財務月報</span>
               <span id="report-period" class="text-slate-500 font-normal"></span>
             </div>
-            <div class="grid grid-cols-3 gap-1 text-center font-bold">
-              <div class="bg-white p-1.5 rounded border border-slate-200"><span class="text-[10px] text-slate-400">收入</span><p id="rep-income" class="text-emerald-600">0</p></div>
-              <div class="bg-white p-1.5 rounded border border-slate-200"><span class="text-[10px] text-slate-400">支出</span><p id="rep-expense" class="text-rose-600">0</p></div>
-              <div class="bg-white p-1.5 rounded border border-slate-200"><span class="text-[10px] text-slate-400">進貨</span><p id="rep-delivery" class="text-blue-600">0</p></div>
+            <div class="grid grid-cols-4 gap-1 text-center font-bold">
+              <div class="bg-white p-1 rounded border border-slate-200"><span class="text-[9px] text-slate-400">總收入</span><p id="rep-income" class="text-emerald-600 text-xs">0</p></div>
+              <div class="bg-white p-1 rounded border border-slate-200"><span class="text-[9px] text-slate-400">零用金</span><p id="rep-expense" class="text-rose-600 text-xs">0</p></div>
+              <div class="bg-white p-1 rounded border border-slate-200"><span class="text-[9px] text-slate-400">貨款應付</span><p id="rep-delivery" class="text-blue-600 text-xs">0</p></div>
+              <div class="bg-white p-1 rounded border border-slate-200"><span class="text-[9px] text-slate-400">當月淨結餘</span><p id="rep-net" class="text-indigo-700 text-xs font-black">0</p></div>
             </div>
             <div class="space-y-1">
               <span class="font-bold text-slate-600 text-[11px]">各廠商進貨小計：</span>
@@ -417,6 +436,7 @@
             </div>
           </div>
 
+          <!-- 待核銷付款清單 -->
           <div class="space-y-1.5 pt-2 border-t border-slate-100">
             <span class="font-bold text-slate-700 text-xs">💵 待付款核銷明細：</span>
             <div id="admin-data-list" class="space-y-2"></div>
@@ -495,13 +515,14 @@
 
         <div>
           <label class="block text-slate-600 font-bold mb-1">發票拍照自動辨識 (選填)</label>
-          <input type="file" accept="image/*" capture="environment" onchange="processInvoiceImage(this, 'modal-invoice-no', 'modal-amount', 'modal-ocr-status')" class="w-full border rounded-lg p-1 bg-slate-50 border-slate-300">
+          <input type="file" accept="image/*" capture="environment" onchange="processInvoiceImageWithVerification(this, 'modal-invoice-no', 'modal-amount', 'modal-ocr-status')" class="w-full border rounded-lg p-1 bg-slate-50 border-slate-300">
           <span id="modal-ocr-status" class="text-[10px] text-slate-400">就緒</span>
         </div>
 
         <div>
           <label class="block text-slate-600 font-bold mb-1">發票號碼 (10碼)</label>
-          <input type="text" id="modal-invoice-no" required placeholder="AB12345678" class="w-full border rounded-lg p-2 font-mono uppercase bg-slate-50 border-slate-300">
+          <input type="text" id="modal-invoice-no" onblur="checkDuplicateInvoice(this.value, 'modal-inv-warn')" required placeholder="AB12345678" class="w-full border rounded-lg p-2 font-mono uppercase bg-slate-50 border-slate-300">
+          <span id="modal-inv-warn" class="text-[9px] text-rose-600 font-bold hidden block"></span>
         </div>
 
         <div>
