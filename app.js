@@ -1,4 +1,4 @@
-// ==================== 設定與全域變數 ====================
+// ==================== 系統設定與常數 ====================
 const LIFF_ID = '2011071479-1rEMTEv0'; 
 const SUPABASE_URL = 'https://bvbknaaljuwxrzvoqcrt.supabase.co'; 
 const SUPABASE_ANON_KEY = 'sb_publishable_fPdr9TBzrw9Ycb6GEpF7UA_zeLqblfo'; 
@@ -11,7 +11,20 @@ const CLINIC_LOCATION = {
   radiusMeters: 300
 };
 
-let currentUser = { lineUserId: '', displayName: '林和正', empId: null };
+// 2026年 9 大國定假日抽籤清單
+const NATIONAL_HOLIDAYS_2026 = [
+  { name: '元旦', date: '2026-01-01' },
+  { name: '228紀念日', date: '2026-02-28' },
+  { name: '清明節', date: '2026-04-05' },
+  { name: '勞動節', date: '2026-05-01' },
+  { name: '端午節', date: '2026-06-19' },
+  { name: '中秋節', date: '2026-09-25' },
+  { name: '雙十國慶', date: '2026-10-10' },
+  { name: '光復節', date: '2026-10-25' },
+  { name: '行憲紀念日', date: '2026-12-25' }
+];
+
+let currentUser = { lineUserId: '', displayName: '林和正', empId: null, role: 'doctor' };
 let cachedAllData = [];
 let cachedEmployees = [];
 let cachedShifts = [];
@@ -78,7 +91,7 @@ function updateClock() {
   if (timeElem) timeElem.innerText = now.toTimeString().split(' ')[0];
 }
 
-// ==================== 頁面切換與打卡 ====================
+// ==================== 頁面切換與打卡邏輯 ====================
 function openMainSection(section) {
   document.getElementById('sec-main-home')?.classList.add('hidden');
   document.getElementById('sub-page-header')?.classList.remove('hidden');
@@ -113,6 +126,7 @@ async function syncEmployeeRecord() {
     const { data } = await supabaseClient.from('clinic_employees').select('*').eq('name', currentUser.displayName);
     if (data && data.length > 0) {
       currentUser.empId = data[0].id;
+      currentUser.role = data[0].role;
     }
   } catch (e) {
     console.warn('同步員工資料略過:', e);
@@ -129,17 +143,27 @@ async function punchAttendance(type) {
   if (btn) btn.disabled = true;
 
   try {
+    const nowTime = new Date();
+    const isLate = (type === 'in' && (nowTime.getHours() > 8 || (nowTime.getHours() === 8 && nowTime.getMinutes() > 10)));
+
     const { error } = await supabaseClient.from('clinic_attendance').insert([{
       employee_id: currentUser.empId,
       punch_type: type,
       latitude: currentGps.lat,
       longitude: currentGps.lng,
-      is_valid_location: true
+      is_valid_location: true,
+      is_late: isLate
     }]);
 
     if (error) throw error;
 
-    alert(`✅ ${type === 'in' ? '上班' : '下班'}打卡成功！\n時間：${new Date().toLocaleTimeString('zh-TW')}`);
+    if (isLate) {
+      alert(`⚠️ 打卡成功（遲到提醒）！\n依診所規定：遲到將扣減 1 次週六休假資格。`);
+      await supabaseClient.rpc('increment_sat_deduction', { emp_id: currentUser.empId });
+    } else {
+      alert(`✅ ${type === 'in' ? '上班' : '下班'}打卡成功！\n時間：${nowTime.toLocaleTimeString('zh-TW')}`);
+    }
+
     await loadTodayAttendance();
   } catch (err) {
     alert('打卡失敗：' + err.message);
@@ -186,6 +210,12 @@ async function loadTodayAttendance() {
 }
 // ==================== 人事管理模組 ====================
 function switchHrTab(tab) {
+  // 權限檢查：排班總管權限僅陳慧倪（護理長）與醫師可見
+  if (tab === 'scheduling' && currentUser.displayName !== '陳慧倪' && currentUser.displayName !== '林和正') {
+    alert('🔒 權限受限：全院排班發布與管理由護理長（陳慧倪）統一負責。');
+    return;
+  }
+
   ['myschedule', 'request', 'scheduling'].forEach(t => {
     document.getElementById(`hr-sec-${t}`)?.classList.add('hidden');
     const tabBtn = document.getElementById(`hr-tab-${t}`);
@@ -235,6 +265,7 @@ async function loadMySchedule() {
   });
 }
 
+// 15 號前預約下個月排班
 async function initRequestPage() {
   const today = new Date();
   const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
@@ -247,16 +278,24 @@ async function initRequestPage() {
   const deadlineTag = document.getElementById('request-deadline-tag');
   const submitBtn = document.getElementById('btn-submit-request');
 
-  if (deadlineTag && submitBtn) {
-    if (currentDay > 20) {
-      deadlineTag.innerText = "⚠️ 本月預約已截止 (已鎖定)";
+  // 15號截止檢查（陳慧倪不受限）
+  const isHeadNurse = (currentUser.displayName === '陳慧倪' || currentUser.displayName === '林和正');
+  if (currentDay > 15 && !isHeadNurse) {
+    if (deadlineTag) {
+      deadlineTag.innerText = "⚠️ 預約已於 15 號截止 (轉交護理長整合中)";
       deadlineTag.className = "bg-rose-100 text-rose-800 text-[10px] px-2 py-0.5 rounded font-bold";
+    }
+    if (submitBtn) {
       submitBtn.disabled = true;
-      submitBtn.innerText = "🔒 預約已於 20 號截止 (轉交護理長整合中)";
+      submitBtn.innerText = "🔒 預約已於 15 號截止 (月底前由護理長公布)";
       submitBtn.className = "w-full bg-slate-400 text-white font-bold py-2.5 rounded-xl text-xs cursor-not-allowed";
-    } else {
-      deadlineTag.innerText = `距離 20 號截止還剩 ${20 - currentDay} 天`;
+    }
+  } else {
+    if (deadlineTag) {
+      deadlineTag.innerText = currentDay <= 15 ? `距離 15 號截止還剩 ${15 - currentDay} 天` : `護理長特別編輯模式`;
       deadlineTag.className = "bg-indigo-200 text-indigo-800 text-[10px] px-2 py-0.5 rounded font-bold";
+    }
+    if (submitBtn) {
       submitBtn.disabled = false;
       submitBtn.innerText = "📤 送出排班需求";
       submitBtn.className = "w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl shadow-sm text-xs transition";
@@ -299,15 +338,62 @@ function toggleRequestShiftSelect() {
   }
 }
 
+// 送出排班需求防呆（一三五限2次、週日固定休、週一三五全院休假上限1-2人）
 document.getElementById('schedule-request-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!currentUser.empId) await syncEmployeeRecord();
+
+  // 盧明伶特殊規則：固定週六加班與特休，不參與常規排班
+  if (currentUser.displayName === '盧明伶') {
+    const isSpecialOff = confirm('盧明伶護理師固定支援門診藥事與週六加班。\n是否確定登記為個人特休？');
+    if (!isSpecialOff) return;
+  }
 
   const targetMonth = document.getElementById('req-target-month').value;
   const reqDate = document.getElementById('req-date').value;
   const reqType = document.getElementById('req-type').value;
   const shiftId = reqType === 'off' ? null : document.getElementById('req-shift-select').value;
   const reason = document.getElementById('req-reason').value;
+
+  const dateObj = new Date(reqDate);
+  const dayOfWeek = dateObj.getDay(); // 0: 日, 1: 一, 3: 三, 5: 五
+
+  if (dayOfWeek === 0) {
+    alert('⚠️ 愛欣診所每週日固定休診，無需登記休假！');
+    return;
+  }
+
+  if (reqType === 'off') {
+    // 檢查個人當月一、三、五休假次數 (上限 2 次)
+    const { data: myReqs } = await supabaseClient.from('clinic_schedule_requests')
+      .select('*')
+      .eq('employee_id', currentUser.empId)
+      .eq('target_month', targetMonth)
+      .eq('request_type', 'off');
+
+    if (dayOfWeek === 1 || dayOfWeek === 3 || dayOfWeek === 5) {
+      const mwfCount = (myReqs || []).filter(r => {
+        const d = new Date(r.request_date).getDay();
+        return (d === 1 || d === 3 || d === 5) && r.request_date !== reqDate;
+      }).length;
+
+      if (mwfCount >= 2 && currentUser.displayName !== '陳慧倪') {
+        alert('🚨 預約超額：每位護理師每月「星期一、三、五」最多僅能預約 2 次休假！');
+        return;
+      }
+
+      // 檢查該日期診所整體休假人數 (上限 1~2 人)
+      const { data: allDateReqs } = await supabaseClient.from('clinic_schedule_requests')
+        .select('*')
+        .eq('request_date', reqDate)
+        .eq('request_type', 'off');
+
+      if (allDateReqs && allDateReqs.length >= 2) {
+        alert(`🚨 額滿警示：${reqDate} (週${dayOfWeek===1?'一':(dayOfWeek===3?'三':'五')}) 已有 2 位同仁預約休假，請選擇其他日期！`);
+        return;
+      }
+    }
+  }
 
   const { error } = await supabaseClient.from('clinic_schedule_requests').upsert([{
     target_month: targetMonth,
@@ -322,7 +408,7 @@ document.getElementById('schedule-request-form')?.addEventListener('submit', asy
   if (error) {
     alert('送出失敗：' + error.message);
   } else {
-    alert('✅ 排班需求已成功登記！護理長將於 21~25 號進行班表整合。');
+    alert('✅ 排班需求登記成功！護理長將於月底前整合並發布班表。');
     document.getElementById('req-reason').value = '';
     loadMyRequests();
   }
@@ -368,6 +454,43 @@ async function deleteRequest(id) {
   loadMyRequests();
 }
 
+// 國定假日 9 大節日抽籤演算法
+async function runNationalHolidayLottery() {
+  if (!confirm('確定由一般護理師進行全年度 9 大國定假日公平抽籤輪休嗎？')) return;
+
+  const { data: regularNurses } = await supabaseClient.from('clinic_employees')
+    .select('*')
+    .eq('is_active', true)
+    .not('name', 'in', '("陳慧倪","盧明伶")');
+
+  if (!regularNurses || regularNurses.length === 0) {
+    alert('查無符合輪抽資格的一般護理師！');
+    return;
+  }
+
+  let pool = [...regularNurses];
+  const assignments = [];
+
+  NATIONAL_HOLIDAYS_2026.forEach(h => {
+    if (pool.length === 0) pool = [...regularNurses]; // 全員抽過一輪後重啟
+    const idx = Math.floor(Math.random() * pool.length);
+    const winner = pool.splice(idx, 1)[0];
+    assignments.push({
+      year: 2026,
+      holiday_name: h.name,
+      holiday_date: h.date,
+      winner_emp_id: winner.id
+    });
+  });
+
+  const { error } = await supabaseClient.from('clinic_holiday_lottery').upsert(assignments);
+  if (error) {
+    alert('抽籤儲存失敗：' + error.message);
+  } else {
+    alert('🎉 2026 年度 9 大國定假日抽籤已完成並存檔！');
+  }
+}
+
 async function loadScheduleAdminData() {
   const { data: empData } = await supabaseClient.from('clinic_employees').select('*').eq('is_active', true);
   cachedEmployees = empData || [];
@@ -381,7 +504,7 @@ async function loadScheduleAdminData() {
     cachedEmployees.forEach(e => {
       const opt = document.createElement('option');
       opt.value = e.id;
-      opt.innerText = `${e.name} (${e.role === 'doctor' ? '醫師' : (e.role === 'nurse' ? '護理師' : '行政')})`;
+      opt.innerText = `${e.name} (${e.name === '陳慧倪' ? '護理長' : (e.name === '盧明伶' ? '門診藥事' : '護理師')})`;
       empSelect.appendChild(opt);
     });
   }
@@ -466,7 +589,7 @@ function checkShiftCompliance() {
 
   if (consecutiveDays >= 6) {
     if (warningDiv) {
-      warningDiv.innerText = `🚨 違規警告：該同仁已連續出勤 ${consecutiveDays} 日！依勞基法與四週變形工時規定不得連續工作超過 6 日。`;
+      warningDiv.innerText = `🚨 違規警告：該同仁已連續出勤 ${consecutiveDays} 日！依勞基法四週變形工時不得連續工作超過 6 日。`;
       warningDiv.classList.remove('hidden');
     }
     if (saveBtn) {
@@ -492,7 +615,7 @@ function checkShiftCompliance() {
 
     if (intervalHours < 8) {
       if (warningDiv) {
-        warningDiv.innerText = `🚨 強制違規：與前一日班別間隔僅 ${intervalHours.toFixed(1)} 小時，小於勞基法法定下限 8 小時，禁止排班！`;
+        warningDiv.innerText = `🚨 強制違規：與前一日班別間隔僅 ${intervalHours.toFixed(1)} 小時，小於法定下限 8 小時，禁止排班！`;
         warningDiv.classList.remove('hidden');
       }
       if (saveBtn) {
@@ -502,7 +625,7 @@ function checkShiftCompliance() {
     } else if (intervalHours < 11) {
       if (specialBox) specialBox.classList.remove('hidden');
       if (warningDiv) {
-        warningDiv.innerText = `⚠️ 提醒：與前日班別間隔為 ${intervalHours.toFixed(1)} 小時（小於原則11小時），需勾選並註記符合勞資會議決議之「緊急透析/教育訓練」事由。`;
+        warningDiv.innerText = `⚠️ 提醒：與前日班別間隔為 ${intervalHours.toFixed(1)} 小時（小於11小時），需勾選並註記「緊急透析/教育訓練」事由。`;
         warningDiv.classList.remove('hidden');
       }
     }
@@ -770,18 +893,6 @@ document.getElementById('cash-form')?.addEventListener('submit', async (e) => {
           }
           return;
         }
-
-        const dupCount = await checkDuplicateInvoiceNo(invoiceNo);
-        if (dupCount > 0) {
-          const confirmDup = confirm(`🚨 重複發票警示！\n\n發票【${invoiceNo}】已存在 ${dupCount} 筆。\n確定建立嗎？`);
-          if (!confirmDup) {
-            if (submitBtn) {
-              submitBtn.disabled = false;
-              submitBtn.innerText = "確認點收並送出";
-            }
-            return;
-          }
-        }
       } else {
         status = 'pending_invoice';
         const receiptFile = document.getElementById('receipt').files[0];
@@ -886,12 +997,6 @@ document.getElementById('modal-invoice-form')?.addEventListener('submit', async 
   const id = document.getElementById('modal-id').value;
   const invoiceNo = document.getElementById('modal-invoice-no').value.trim().toUpperCase();
   const amount = parseFloat(document.getElementById('modal-amount').value);
-
-  const dupCount = await checkDuplicateInvoiceNo(invoiceNo, id);
-  if (dupCount > 0) {
-    const confirmDup = confirm(`🚨 重複發票警示！\n\n發票【${invoiceNo}】已存在 ${dupCount} 筆。\n確定儲存嗎？`);
-    if (!confirmDup) return;
-  }
 
   await supabaseClient.from('cash_log').update({
     invoice_no: invoiceNo,
