@@ -1,4 +1,4 @@
-// ==================== 愛欣診所 人事排班與假期管理模組 (hr.js) ====================
+// ==================== 愛欣診所 人事排班與特休管理模組 (hr.js) ====================
 let cachedEmployees = [];
 let cachedMonthSchedules = [];
 let cachedMonthRequests = [];
@@ -11,6 +11,28 @@ const SHIFT_TYPES = ['未排班', '開門白班', '開門小白班', '正常白�
 
 // 5 種標準工時 (小時)
 const WORK_HOURS = [7, 7.5, 8.5, 9, 9.5];
+
+// 診所全員入職日期資料庫 (精確計算 2026 年資與法定特休天數)
+const EMPLOYEE_ONBOARDING_DATA = {
+  '陳惠倪': { onboard: '2005-05-01', roleName: '護理長' },
+  '曾憲敏': { onboard: '2012-05-01', roleName: '副護理長' },
+  '薛雅仁': { onboard: '2005-05-16', roleName: '護理師' },
+  '李牧音': { onboard: '2006-01-11', roleName: '護理師' },
+  '林雯琦': { onboard: '2006-12-01', roleName: '護理師' },
+  '謝宜婷': { onboard: '2009-11-02', roleName: '護理師' },
+  '盧明伶': { onboard: '2009-11-02', roleName: '門診藥事' },
+  '陳金暖': { onboard: '2010-04-01', roleName: '小組長' },
+  '王瓊代': { onboard: '2014-05-01', roleName: '護理師' },
+  '吳金燕': { onboard: '2018-05-01', roleName: '護理師' },
+  '王靜慧': { onboard: '2019-07-08', roleName: '護理師' },
+  '吳培瑜': { onboard: '2021-09-20', roleName: '護理師' },
+  '李香瑩': { onboard: '2023-07-10', roleName: '護理師' },
+  '吳沐芸': { onboard: '2024-05-15', roleName: '護理師' },
+  '涂春娥': { onboard: '2008-10-20', roleName: '工作人員' },
+  '胡月霞': { onboard: '2022-04-01', roleName: '清潔人員' },
+  '王芝妍': { onboard: '2018-08-06', roleName: '工時透析' },
+  '林和正': { onboard: '2000-01-01', roleName: '醫師' }
+};
 
 // 固定班同仁名冊 (常規一至五上班、週六加班，不列入透析排班池，可自填特休/年休)
 const FIXED_STAFF_ROLES = {
@@ -36,12 +58,12 @@ function getHolidayInfo(dateStr) {
   return NATIONAL_HOLIDAYS_2026.find(h => h.date === dateStr);
 }
 
-// ==================== 勞基法特休天數標準對照計算 ====================
-function calculateLaborSpecialLeaveDays(onboardingDateStr) {
-  // 若無設定到職日，以預設年資 (約 2 年) 提供 10 日特休
-  if (!onboardingDateStr) return { days: 10, seniorityText: '年資：約 2 年 (預設)' };
+// ==================== 勞基法法定特休標準計算函式 ====================
+function calculateLaborSpecialLeave(name) {
+  const info = EMPLOYEE_ONBOARDING_DATA[name];
+  if (!info) return { days: 10, seniorityText: '年資：約 2 年 (預設)' };
 
-  const onboard = new Date(onboardingDateStr);
+  const onboard = new Date(info.onboard);
   const now = new Date('2026-08-17');
   const totalMonths = (now.getFullYear() - onboard.getFullYear()) * 12 + (now.getMonth() - onboard.getMonth());
   const years = totalMonths / 12;
@@ -65,8 +87,8 @@ function calculateLaborSpecialLeaveDays(onboardingDateStr) {
     days = Math.min(30, 15 + extraYears);
   }
 
-  const seniorityText = `到職：${onboardingDateStr} (年資 ${years.toFixed(1)} 年)`;
-  return { days, seniorityText };
+  const seniorityText = `到職：${info.onboard} (年資 ${years.toFixed(1)} 年)`;
+  return { days, seniorityText, roleName: info.roleName };
 }
 
 // ==================== 頁籤切換與初始化 ====================
@@ -120,7 +142,7 @@ function getEmpCode(emp) {
   return idx >= 0 ? String(idx + 1).padStart(2, '0') : '護理';
 }
 
-// ==================== 1. 「我的班表」月曆與法定休假餘額結算 ====================
+// ==================== 1. 「我的班表」月曆與法定特休餘額結算 ====================
 async function loadMySchedule() {
   if (!currentUser.empId) await syncEmployeeRecord();
   initHrDefaults();
@@ -137,21 +159,18 @@ async function loadMySchedule() {
   const startDateStr = `${monthStr}-01`;
   const endDateStr = `${monthStr}-${totalDays}`;
 
-  // 抓取全年度個人出勤與抽籤紀錄以計算年休假餘額
-  const [empDataRes, yearSchRes, monthSchRes, yearLotteryRes] = await Promise.all([
-    supabaseClient.from('clinic_employees').select('*').eq('id', currentUser.empId).single(),
+  const [yearSchRes, monthSchRes, yearLotteryRes] = await Promise.all([
     supabaseClient.from('clinic_schedules').select('*').eq('employee_id', currentUser.empId).gte('date', `${yearStr}-01-01`).lte('date', `${yearStr}-12-31`),
     supabaseClient.from('clinic_schedules').select('*').eq('employee_id', currentUser.empId).gte('date', startDateStr).lte('date', endDateStr),
     supabaseClient.from('clinic_holiday_lottery').select('*').eq('winner_emp_id', currentUser.empId).eq('year', parseInt(yearStr, 10))
   ]);
 
-  const empDetail = empDataRes.data || {};
   const yearSchedules = yearSchRes.data || [];
   const monthSchedules = monthSchRes.data || [];
   const yearLotteries = yearLotteryRes.data || [];
 
-  // 1. 勞基法法定特休計算
-  const { days: totalSpecialLeave, seniorityText } = calculateLaborSpecialLeaveDays(empDetail.onboarding_date);
+  // 1. 勞基法法定特休精準計算
+  const { days: totalSpecialLeave, seniorityText } = calculateLaborSpecialLeave(currentUser.displayName);
   const usedSpecialLeave = yearSchedules.filter(s => s.shift_name?.includes('特休') || s.shift_name?.includes('年休')).length;
   document.getElementById('my-seniority-text').innerText = seniorityText;
   document.getElementById('stat-special-leave').innerText = `${usedSpecialLeave} / ${totalSpecialLeave}日`;
@@ -163,11 +182,10 @@ async function loadMySchedule() {
 
   // 3. 例休與休息日 (52 週 x 2 = 104 日)
   const totalWeekend = 104;
-  // 統計已排休之週日與例假日
   const usedWeekend = yearSchedules.filter(s => s.shift_name === '休假' || s.shift_name === '未排班').length;
   document.getElementById('stat-weekend-leave').innerText = `${usedWeekend} / ${totalWeekend}日`;
 
-  // 4. 工時增減折算天數 (基準 8h/日，超時或減少累積)
+  // 4. 工時增減折算天數 (基準 8h/日)
   let netHoursDiff = 0;
   let monthWorkHours = 0;
   yearSchedules.forEach(s => {
@@ -188,13 +206,13 @@ async function loadMySchedule() {
   document.getElementById('stat-hours-offset-days').innerText = `${offsetSign}${hoursOffsetDays.toFixed(1)}日 (${netHoursDiff.toFixed(1)}h)`;
   document.getElementById('my-total-hours').innerText = `${monthWorkHours} 小時`;
 
-  // 5. 總剩餘假期結算 = (特休剩餘) + (國定未休) + (例休剩餘) + (工時折算天數)
+  // 5. 總剩餘假期天數結算
   const remainingSpecial = Math.max(0, totalSpecialLeave - usedSpecialLeave);
   const remainingNational = Math.max(0, totalNational - usedNational);
   const remainingTotal = (remainingSpecial + remainingNational + hoursOffsetDays);
   document.getElementById('my-remaining-total-days').innerText = `${remainingTotal.toFixed(1)} 天`;
 
-  // 渲染個人月曆網格
+  // 渲染個人月曆
   const grid = document.getElementById('my-calendar-grid');
   if (!grid) return;
   grid.innerHTML = '';
@@ -253,7 +271,7 @@ async function loadMySchedule() {
   }
 }
 
-// ==================== 2. 「全員預約看板」共享月曆視圖 (即時同步全員) ====================
+// ==================== 2. 「全員預約看板」共享月曆視圖 ====================
 async function initRequestPage() {
   if (!currentUser.empId) await syncEmployeeRecord();
   initHrDefaults();
@@ -292,7 +310,6 @@ async function loadRequestCalendar() {
   const startDateStr = `${monthStr}-01`;
   const endDateStr = `${monthStr}-${totalDays}`;
 
-  // 抓取當月「所有同仁」的預約排休與國定抽籤紀錄，實現完全共享與同步連動
   const [empRes, allReqRes, lotteryRes] = await Promise.all([
     supabaseClient.from('clinic_employees').select('*').eq('is_active', true),
     supabaseClient.from('clinic_schedule_requests').select('*, clinic_employees(*)').gte('request_date', startDateStr).lte('request_date', endDateStr),
@@ -336,7 +353,6 @@ async function loadRequestCalendar() {
     else if (dayOfWeek === 0) headerHtml += `<span class="text-[9px] bg-slate-200 text-slate-700 px-1 rounded">休診</span>`;
     headerHtml += `</div>`;
 
-    // 共享展示：國定抽中者、出國同仁、一般排休同仁代號
     let bodyHtml = `<div class="space-y-0.5 mt-0.5">`;
 
     if (holidayWinner) {
@@ -463,7 +479,7 @@ async function deleteCurrentDayRequest() {
   loadRequestCalendar();
 }
 
-// ==================== 3. 護理長排班中心 (設定班別與工時、同步排休) ====================
+// ==================== 3. 護理長排班中心 (班別工時設定、工時累計) ====================
 async function initScheduleAdmin() {
   const { data: empData } = await supabaseClient.from('clinic_employees').select('*').eq('is_active', true);
   
