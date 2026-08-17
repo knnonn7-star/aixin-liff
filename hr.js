@@ -6,7 +6,7 @@ let cachedMonthLotteries = [];
 let editingDate = null;
 let userReqDate = null;
 
-// 3 大核心班別 (已移除開門小白班)
+// 3 大核心班別
 const SHIFT_TYPES = ['未排班', '開門白班', '正常白班', '正常晚班'];
 
 // 5 種標準工時 (小時)
@@ -34,7 +34,7 @@ const NURSE_CODE_MAP = {
   '林和正': '醫師'
 };
 
-// 診所全員入職日期資料庫 (年資計算)
+// 診所全員精確入職日期資料庫 (套用勞基法特休專用)
 const EMPLOYEE_ONBOARDING_DATA = {
   '陳慧倪': { onboard: '2005-05-01', roleName: '護理長' },
   '陳惠倪': { onboard: '2005-05-01', roleName: '護理長' },
@@ -109,6 +109,7 @@ function getEmpCode(input) {
   return name ? name.substring(0, 2) : '??';
 }
 
+// 依據入職日期計算年資與勞基法特休天數
 function calculateLaborSpecialLeave(name) {
   const info = EMPLOYEE_ONBOARDING_DATA[name] || EMPLOYEE_ONBOARDING_DATA['陳慧倪'];
   if (!info) return { days: 10, seniorityText: '年資：約 2 年 (預設)' };
@@ -119,13 +120,20 @@ function calculateLaborSpecialLeave(name) {
   const years = totalMonths / 12;
 
   let days = 0;
-  if (years < 0.5) days = 0;
-  else if (years < 1) days = 3;
-  else if (years < 2) days = 7;
-  else if (years < 3) days = 10;
-  else if (years < 5) days = 14;
-  else if (years < 10) days = 15;
-  else {
+  if (years < 0.5) {
+    days = 0;
+  } else if (years < 1) {
+    days = 3;  // 滿6個月以上未滿1年：3日
+  } else if (years < 2) {
+    days = 7;  // 滿1年以上未滿2年：7日
+  } else if (years < 3) {
+    days = 10; // 滿2年以上未滿3年：10日
+  } else if (years < 5) {
+    days = 14; // 滿3年以上未滿5年：14日
+  } else if (years < 10) {
+    days = 15; // 滿5年以上未滿10年：15日
+  } else {
+    // 滿10年以上：每滿1年加給1日，上限30日
     const extraYears = Math.floor(years - 10) + 1;
     days = Math.min(30, 15 + extraYears);
   }
@@ -175,7 +183,7 @@ function initHrDefaults() {
 function isFixedStaff(name) { return !!FIXED_STAFF_ROLES[name]; }
 function isDoctor(name, role) { return name === '林和正' || role === 'doctor'; }
 function isDialysisNurse(name, role) { return !isFixedStaff(name) && !isDoctor(name, role); }
-// ==================== 1. 「我的班表」月曆與法定假期餘額結算 ====================
+// ==================== 1. 「我的班表」月曆與法定假期餘額結算 (已移除週休與例休) ====================
 async function loadMySchedule() {
   if (!currentUser.empId) await syncEmployeeRecord();
   initHrDefaults();
@@ -207,19 +215,18 @@ async function loadMySchedule() {
   const monthSchedules = monthSchRes.data || [];
   const yearLotteries = yearLotteryRes.data || [];
 
+  // 1. 各別入職日法定特休計算
   const { days: totalSpecialLeave, seniorityText } = calculateLaborSpecialLeave(currentUser.displayName);
   const usedSpecialLeave = yearSchedules.filter(s => s.shift_name?.includes('特休') || s.shift_name?.includes('年休')).length;
   document.getElementById('my-seniority-text').innerText = seniorityText;
   document.getElementById('stat-special-leave').innerText = `${usedSpecialLeave} / ${totalSpecialLeave}日`;
 
+  // 2. 政府法定國定假日 (12 日)
   const totalNational = NATIONAL_HOLIDAYS_2026.length;
   const usedNational = yearLotteries.length;
   document.getElementById('stat-national-leave').innerText = `${usedNational} / ${totalNational}日`;
 
-  const totalWeekend = 104;
-  const usedWeekend = yearSchedules.filter(s => s.shift_name === '休假' || s.shift_name === '未排班').length;
-  document.getElementById('stat-weekend-leave').innerText = `${usedWeekend} / ${totalWeekend}日`;
-
+  // 3. 工時增減折算 (基準 8h/日)
   let netHoursDiff = 0;
   let monthWorkHours = 0;
   yearSchedules.forEach(s => {
@@ -240,6 +247,7 @@ async function loadMySchedule() {
   document.getElementById('stat-hours-offset-days').innerText = `${offsetSign}${hoursOffsetDays.toFixed(1)}日 (${netHoursDiff.toFixed(1)}h)`;
   document.getElementById('my-total-hours').innerText = `${monthWorkHours} 小時`;
 
+  // 4. 總剩餘假期結算 = 特休剩餘 + 國定假剩餘 + 工時折算
   const remainingSpecial = Math.max(0, totalSpecialLeave - usedSpecialLeave);
   const remainingNational = Math.max(0, totalNational - usedNational);
   const remainingTotal = (remainingSpecial + remainingNational + hoursOffsetDays);
@@ -846,7 +854,7 @@ function buildA4CalendarHtml(monthStr) {
     cellContent += `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1px 2px; font-size: 8px; line-height: 1.15; font-family: monospace; min-height: 48px;">`;
 
     if (holidayWon) {
-      const code = getEmpCode(holidayWon.winner_emp_id);
+      const code = getEmpCode(holidayWinner.winner_emp_id);
       cellContent += `<div style="grid-column: span 2; color: #7e22ce; font-weight: bold;">[國休] [${code}]</div>`;
     }
 
