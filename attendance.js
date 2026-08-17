@@ -1,17 +1,13 @@
 /**
  * 愛欣診所 - 打卡出勤模組 (attendance.js)
- * 修正重點：
- * 1. 強化 GPS 定位精度 (enableHighAccuracy + 排除快取)。
- * 2. 修正時區判定 (鎖定 Asia/Taipei GMT+8，解決清晨跨日查詢未歸零問題)。
  */
 
 // =======================
 // 1. 診所基礎參數設定
 // =======================
 const ATTENDANCE_CONFIG = {
-  // 請確認填入診所正確經緯度 (緯度 Latitude, 經度 Longitude)
-  CLINIC_LAT: 22.628000, // 範例：請替換為診所實際緯度
-  CLINIC_LNG: 120.315000, // 範例：請替換為診所實際經度
+  CLINIC_LAT: 22.6309209, // 診所精確緯度
+  CLINIC_LNG: 120.3392031, // 診所精確經度
   MAX_ALLOWED_DISTANCE_METERS: 300, // 允許打卡半徑 (公尺)
   TIMEZONE: 'Asia/Taipei'
 };
@@ -21,21 +17,19 @@ const ATTENDANCE_CONFIG = {
 // =======================
 
 /**
- * 取得台灣時間當日的起訖 ISO 字串 (避免 UTC 跨日 8 小時偏差)
+ * 取得台灣時間當日的起訖 ISO 字串 (鎖定 GMT+8，解決清晨跨日查詢未歸零問題)
  */
 function getTaipeiDayRange() {
   const now = new Date();
   
-  // 格式化出 YYYY-MM-DD (台灣時區)
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: ATTENDANCE_CONFIG.TIMEZONE,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
   });
-  const localDateStr = formatter.format(now); // 例："2026-08-17"
+  const localDateStr = formatter.format(now); // "YYYY-MM-DD"
 
-  // 建立當日 00:00:00 與 23:59:59 的完整 ISO 時間
   const startOfDay = new Date(`${localDateStr}T00:00:00+08:00`).toISOString();
   const endOfDay = new Date(`${localDateStr}T23:59:59.999+08:00`).toISOString();
 
@@ -72,7 +66,7 @@ function getPreciseCurrentPosition() {
 
     const options = {
       enableHighAccuracy: true, // 強制啟用 GPS 晶片高精度模式
-      timeout: 12000,           // 超時時間 12 秒
+      timeout: 10000,           // 超時時間 10 秒
       maximumAge: 0             // 禁止讀取快取舊位置
     };
 
@@ -156,7 +150,7 @@ async function updateDistanceBadge() {
     if (distance <= ATTENDANCE_CONFIG.MAX_ALLOWED_DISTANCE_METERS) {
       badgeEl.style.backgroundColor = 'rgba(16, 185, 129, 0.2)'; // 綠色
     } else {
-      badgeEl.style.backgroundColor = 'rgba(239, 68, 68, 0.2)'; // 紅色提示超出
+      badgeEl.style.backgroundColor = 'rgba(239, 68, 68, 0.2)'; // 紅色
     }
 
     return { coords, distance };
@@ -173,7 +167,6 @@ async function handlePunch(type, userId, userName) {
   const btnIn = document.getElementById('btn-clock-in');
   const btnOut = document.getElementById('btn-clock-out');
 
-  // 防止重複點擊
   if (btnIn) btnIn.disabled = true;
   if (btnOut) btnOut.disabled = true;
 
@@ -189,7 +182,7 @@ async function handlePunch(type, userId, userName) {
 
     // 2. 距離防護驗證
     if (distance > ATTENDANCE_CONFIG.MAX_ALLOWED_DISTANCE_METERS) {
-      alert(`打卡失敗：距離診所過遠 (${distance} 公尺)\n請確認已開啟精確定位並處於診所範圍內。`);
+      alert(`打卡失敗：距離診所過遠 (${distance} 公尺)\n請確認已處於診所範圍內。`);
       return;
     }
 
@@ -198,7 +191,7 @@ async function handlePunch(type, userId, userName) {
       {
         user_id: userId,
         user_name: userName,
-        type: type, // 'check_in' 或 'check_out'
+        type: type,
         latitude: coords.latitude,
         longitude: coords.longitude,
         distance_meters: distance,
