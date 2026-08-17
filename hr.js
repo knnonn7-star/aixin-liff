@@ -34,14 +34,14 @@ const EMPLOYEE_ONBOARDING_DATA = {
   '林和正': { onboard: '2000-01-01', roleName: '醫師' }
 };
 
-// 固定班同仁名冊 (常規一至五上班、週六加班，不列入透析排班池，可自填特休/年休)
+// 固定班同仁名冊
 const FIXED_STAFF_ROLES = {
   '盧明伶': { roleName: '門診藥事', tag: 'bg-emerald-100 text-emerald-900 border-emerald-300' },
   '涂春娥': { roleName: '工作人員', tag: 'bg-teal-100 text-teal-900 border-teal-300' },
   '胡月霞': { roleName: '清潔人員', tag: 'bg-cyan-100 text-cyan-900 border-cyan-300' }
 };
 
-// 台灣政府公告 2026 年度法定應放國定假日 (共 12 日)
+// 2026 年度政府法定國定假日 (共 12 日)
 const NATIONAL_HOLIDAYS_2026 = [
   { name: '元旦', date: '2026-01-01' },
   { name: '除夕', date: '2026-02-16' },
@@ -61,7 +61,6 @@ function getHolidayInfo(dateStr) {
   return NATIONAL_HOLIDAYS_2026.find(h => h.date === dateStr);
 }
 
-// ==================== 勞基法特休標準計算 ====================
 function calculateLaborSpecialLeave(name) {
   const info = EMPLOYEE_ONBOARDING_DATA[name];
   if (!info) return { days: 10, seniorityText: '年資：約 2 年 (預設)' };
@@ -72,19 +71,13 @@ function calculateLaborSpecialLeave(name) {
   const years = totalMonths / 12;
 
   let days = 0;
-  if (years < 0.5) {
-    days = 0;
-  } else if (years < 1) {
-    days = 3;
-  } else if (years < 2) {
-    days = 7;
-  } else if (years < 3) {
-    days = 10;
-  } else if (years < 5) {
-    days = 14;
-  } else if (years < 10) {
-    days = 15;
-  } else {
+  if (years < 0.5) days = 0;
+  else if (years < 1) days = 3;
+  else if (years < 2) days = 7;
+  else if (years < 3) days = 10;
+  else if (years < 5) days = 14;
+  else if (years < 10) days = 15;
+  else {
     const extraYears = Math.floor(years - 10) + 1;
     days = Math.min(30, 15 + extraYears);
   }
@@ -93,7 +86,6 @@ function calculateLaborSpecialLeave(name) {
   return { days, seniorityText, roleName: info.roleName };
 }
 
-// ==================== 頁籤切換與初始化 ====================
 function switchHrTab(tab) {
   const isAdminUser = (currentUser.displayName === '陳慧倪' || currentUser.displayName === '林和正' || currentUser.role === 'doctor');
   
@@ -171,23 +163,19 @@ async function loadMySchedule() {
   const monthSchedules = monthSchRes.data || [];
   const yearLotteries = yearLotteryRes.data || [];
 
-  // 1. 勞基法特休
   const { days: totalSpecialLeave, seniorityText } = calculateLaborSpecialLeave(currentUser.displayName);
   const usedSpecialLeave = yearSchedules.filter(s => s.shift_name?.includes('特休') || s.shift_name?.includes('年休')).length;
   document.getElementById('my-seniority-text').innerText = seniorityText;
   document.getElementById('stat-special-leave').innerText = `${usedSpecialLeave} / ${totalSpecialLeave}日`;
 
-  // 2. 政府法定國定假日 (12 日)
   const totalNational = NATIONAL_HOLIDAYS_2026.length;
   const usedNational = yearLotteries.length;
   document.getElementById('stat-national-leave').innerText = `${usedNational} / ${totalNational}日`;
 
-  // 3. 週休與例休 (104 日)
   const totalWeekend = 104;
   const usedWeekend = yearSchedules.filter(s => s.shift_name === '休假' || s.shift_name === '未排班').length;
   document.getElementById('stat-weekend-leave').innerText = `${usedWeekend} / ${totalWeekend}日`;
 
-  // 4. 工時增減折算 (基準 8h/日)
   let netHoursDiff = 0;
   let monthWorkHours = 0;
   yearSchedules.forEach(s => {
@@ -208,13 +196,11 @@ async function loadMySchedule() {
   document.getElementById('stat-hours-offset-days').innerText = `${offsetSign}${hoursOffsetDays.toFixed(1)}日 (${netHoursDiff.toFixed(1)}h)`;
   document.getElementById('my-total-hours').innerText = `${monthWorkHours} 小時`;
 
-  // 5. 總剩餘假期結算
   const remainingSpecial = Math.max(0, totalSpecialLeave - usedSpecialLeave);
   const remainingNational = Math.max(0, totalNational - usedNational);
   const remainingTotal = (remainingSpecial + remainingNational + hoursOffsetDays);
   document.getElementById('my-remaining-total-days').innerText = `${remainingTotal.toFixed(1)} 天`;
 
-  // 渲染個人月曆
   const grid = document.getElementById('my-calendar-grid');
   if (!grid) return;
   grid.innerHTML = '';
@@ -424,7 +410,6 @@ function closeUserReqModal() {
   userReqDate = null;
 }
 
-// 送出排休需求 (已取消週一三五最多2次的限制)
 async function submitUserDayRequest() {
   if (!userReqDate) return;
 
@@ -459,7 +444,7 @@ async function deleteCurrentDayRequest() {
   loadRequestCalendar();
 }
 
-// ==================== 3. 護理長排班中心 (3大班別設定、A4 列印引擎) ====================
+// ==================== 3. 護理長排班中心 ====================
 async function initScheduleAdmin() {
   const { data: empData } = await supabaseClient.from('clinic_employees').select('*').eq('is_active', true);
   
@@ -722,7 +707,6 @@ async function saveModalDaySchedule() {
   loadScheduleCalendar();
 }
 
-// 國定假日抽籤
 async function runNationalHolidayLottery() {
   if (!confirm('確定由「透析輪班護理師」進行全年度 12 日政府國定假日抽籤輪休？（每人均休過一次後才重啟下一輪）')) return;
 
@@ -754,35 +738,29 @@ async function runNationalHolidayLottery() {
   loadScheduleCalendar();
 }
 
-// ==================== 4. A4 橫向標準排版列印功能 ====================
-function printScheduleA4() {
-  const monthStr = document.getElementById('admin-sch-month')?.value;
-  if (!monthStr) return alert('請選擇要列印的月份！');
-
+// ==================== 4. A4 橫向列印預覽與跨瀏覽器列印引擎 ====================
+function buildA4HtmlString(monthStr) {
   const [y, m] = monthStr.split('-').map(Number);
   const totalDays = new Date(y, m, 0).getDate();
-
-  const printContainer = document.getElementById('print-area');
-  if (!printContainer) return;
-
   const dialysisNurses = cachedEmployees.filter(e => isDialysisNurse(e.name, e.role));
 
-  let tableHeaderCols = '<th class="border border-black p-1 bg-slate-200 text-xs w-20">姓名/日期</th>';
+  let tableHeaderCols = '<th style="border: 1px solid #000; padding: 4px; background: #e2e8f0; font-size: 11px; width: 85px;">姓名/代碼</th>';
   for (let d = 1; d <= totalDays; d++) {
     const dayStr = `${monthStr}-${String(d).padStart(2, '0')}`;
     const dayOfWeek = new Date(y, m - 1, d).getDay();
     const holiday = getHolidayInfo(dayStr);
     const dayName = ['日', '一', '二', '三', '四', '五', '六'][dayOfWeek];
-    const thBg = holiday || dayOfWeek === 0 ? 'bg-rose-100 text-rose-800' : 'bg-slate-50';
-    tableHeaderCols += `<th class="border border-black p-0.5 text-[9px] ${thBg} leading-tight">${d}<br><span class="text-[8px]">${dayName}</span></th>`;
+    const thBg = holiday || dayOfWeek === 0 ? '#ffe4e6' : '#f8fafc';
+    const thColor = holiday || dayOfWeek === 0 ? '#b91c1c' : '#334155';
+    tableHeaderCols += `<th style="border: 1px solid #000; padding: 2px; font-size: 9px; background: ${thBg}; color: ${thColor}; text-align: center; min-width: 22px;">${d}<br><span style="font-size: 8px;">${dayName}</span></th>`;
   }
-  tableHeaderCols += '<th class="border border-black p-1 bg-slate-200 text-xs w-14">總時數</th>';
+  tableHeaderCols += '<th style="border: 1px solid #000; padding: 4px; background: #e2e8f0; font-size: 11px; width: 60px;">總時數</th>';
 
   let tableRows = '';
   dialysisNurses.forEach(emp => {
     const code = getEmpCode(emp);
     let totalH = 0;
-    let rowCells = `<td class="border border-black p-1 font-bold text-[10px] text-center bg-slate-100">[${code}] ${emp.name}</td>`;
+    let rowCells = `<td style="border: 1px solid #000; padding: 3px; font-weight: bold; font-size: 10px; text-align: center; background: #f1f5f9; white-space: nowrap;">[${code}] ${emp.name}</td>`;
 
     for (let d = 1; d <= totalDays; d++) {
       const dayStr = `${monthStr}-${String(d).padStart(2, '0')}`;
@@ -792,56 +770,111 @@ function printScheduleA4() {
       const holidayWon = cachedMonthLotteries.find(l => l.winner_emp_id === emp.id && l.holiday_date === dayStr);
 
       let cellText = '';
-      let cellBg = '';
+      let cellBg = '#ffffff';
 
       if (holidayWon) {
         cellText = '國休';
-        cellBg = 'bg-purple-100 font-bold';
+        cellBg = '#f3e8ff';
       } else if (req) {
         cellText = '排休';
-        cellBg = 'bg-rose-100';
+        cellBg = '#ffe4e6';
       } else if (sch && sch.shift_name && sch.shift_name !== '未排班') {
         const h = Number(sch.hours) || 0;
         totalH += h;
         const shortShift = sch.shift_name === '開門白班' ? '開白' : (sch.shift_name === '正常白班' ? '白' : '晚');
         cellText = `${shortShift}<br>${h}`;
-        cellBg = sch.shift_name.includes('開門') ? 'bg-amber-50 font-bold' : (sch.shift_name.includes('晚') ? 'bg-indigo-50 font-bold' : '');
+        cellBg = sch.shift_name.includes('開門') ? '#fef3c7' : (sch.shift_name.includes('晚') ? '#e0e7ff' : '#ffffff');
       } else if (dayOfWeek === 0) {
         cellText = '休';
-        cellBg = 'bg-slate-100 text-slate-400';
+        cellBg = '#f8fafc';
       }
 
-      rowCells += `<td class="border border-black p-0.5 text-center text-[9px] ${cellBg} leading-tight">${cellText}</td>`;
+      rowCells += `<td style="border: 1px solid #000; padding: 2px; text-align: center; font-size: 9px; background: ${cellBg}; line-height: 1.1;">${cellText}</td>`;
     }
 
-    rowCells += `<td class="border border-black p-1 font-black text-center text-xs bg-slate-100">${totalH}h</td>`;
+    rowCells += `<td style="border: 1px solid #000; padding: 3px; font-weight: 900; text-align: center; font-size: 11px; background: #f8fafc;">${totalH}h</td>`;
     tableRows += `<tr>${rowCells}</tr>`;
   });
 
-  printContainer.innerHTML = `
-    <div class="p-2 space-y-2">
-      <div class="flex justify-between items-end border-b-2 border-black pb-1">
+  return `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; color: black; width: 100%;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid black; padding-bottom: 4px; margin-bottom: 6px;">
         <div>
-          <h2 class="text-base font-black tracking-wider">🏥 愛欣診所透析中心 - 護理人員出勤班表</h2>
-          <span class="text-xs font-bold text-slate-700">排班月份：${monthStr} ｜ 護理長：陳慧倪</span>
+          <h2 style="font-size: 16px; font-weight: 900; margin: 0; letter-spacing: 1px;">🏥 愛欣診所透析中心 - 護理人員出勤班表</h2>
+          <span style="font-size: 11px; font-weight: bold; color: #334155;">排班月份：${monthStr} ｜ 護理長：陳慧倪</span>
         </div>
-        <div class="text-[10px] text-slate-600">
-          列印日期：${new Date().toLocaleDateString('zh-TW')}
+        <div style="font-size: 10px; color: #64748b;">
+          產表日期：${new Date().toLocaleDateString('zh-TW')}
         </div>
       </div>
 
-      <table class="w-full border-collapse border border-black text-center">
+      <table style="width: 100%; border-collapse: collapse; border: 1px solid black; text-align: center;">
         <thead><tr>${tableHeaderCols}</tr></thead>
         <tbody>${tableRows}</tbody>
       </table>
 
-      <div class="flex justify-between text-xs pt-4 font-bold">
+      <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 14px; font-weight: bold;">
         <span>製表 / 護理長：陳慧倪 _______________</span>
         <span>院長 / 醫師：林和正 _______________</span>
         <span>管理部核定：_______________</span>
       </div>
     </div>
   `;
+}
 
+function openA4PrintPreview() {
+  const monthStr = document.getElementById('admin-sch-month')?.value;
+  if (!monthStr) return alert('請先選擇要列印的月份！');
+
+  const container = document.getElementById('a4-printable-content');
+  if (container) {
+    container.innerHTML = buildA4HtmlString(monthStr);
+  }
+  document.getElementById('a4-print-modal')?.classList.remove('hidden');
+}
+
+function closeA4PrintModal() {
+  document.getElementById('a4-print-modal')?.classList.add('hidden');
+}
+
+function triggerNativePrint() {
   window.print();
+}
+
+function openInExternalBrowser() {
+  const monthStr = document.getElementById('admin-sch-month')?.value;
+  const htmlContent = buildA4HtmlString(monthStr);
+  
+  const printWindow = window.open('', '_blank');
+  if (printWindow) {
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>愛欣診所出勤班表_${monthStr}</title>
+        <style>
+          @page { size: A4 landscape; margin: 6mm; }
+          body { margin: 0; padding: 10px; background: white; font-family: -apple-system, sans-serif; }
+        </style>
+      </head>
+      <body>
+        ${htmlContent}
+        <script>
+          window.onload = function() { window.print(); };
+        </script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  } else {
+    // 若在 LINE 內無法直接 window.open，調用 LIFF 外部瀏覽器開啟
+    if (typeof liff !== 'undefined' && liff.openWindow) {
+      liff.openWindow({
+        url: window.location.href,
+        external: true
+      });
+    } else {
+      alert('請複製網址於 Safari 或 Chrome 瀏覽器中開啟以進行列印！');
+    }
+  }
 }
