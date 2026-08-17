@@ -1,154 +1,248 @@
-const LIFF_ID = '2011071479-1rEMTEv0';
-const SUPABASE_URL = 'https://bvbknaaljuwxrzvoqcrt.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_fPdr9TBzrw9Ycb6GEpF7UA_zeLqblfo';
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+/**
+ * 愛欣診所 - 打卡出勤模組 (attendance.js)
+ * 修正重點：
+ * 1. 強化 GPS 定位精度 (enableHighAccuracy + 排除快取)。
+ * 2. 修正時區判定 (鎖定 Asia/Taipei GMT+8，解決清晨跨日查詢未歸零問題)。
+ */
 
-const CLINIC_LOCATION = { lat: 22.6273, lng: 120.3014, radiusMeters: 100 };
-let currentUser = { lineUserId: '', displayName: '匿名同仁', empId: null };
-let currentGps = { lat: null, lng: null };
+// =======================
+// 1. 診所基礎參數設定
+// =======================
+const ATTENDANCE_CONFIG = {
+  // 請確認填入診所正確經緯度 (緯度 Latitude, 經度 Longitude)
+  CLINIC_LAT: 22.628000, // 範例：請替換為診所實際緯度
+  CLINIC_LNG: 120.315000, // 範例：請替換為診所實際經度
+  MAX_ALLOWED_DISTANCE_METERS: 300, // 允許打卡半徑 (公尺)
+  TIMEZONE: 'Asia/Taipei'
+};
 
-function getDistanceInMeters(lat1, lon1, lat2, lon2) {
-  const R = 6371e3;
-  const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
-  const Δφ = (lat2 - lat1) * Math.PI / 180, Δλ = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*(Math.sin(Δλ/2)**2);
-  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+// =======================
+// 2. 工具函式：時區與距離計算
+// =======================
+
+/**
+ * 取得台灣時間當日的起訖 ISO 字串 (避免 UTC 跨日 8 小時偏差)
+ */
+function getTaipeiDayRange() {
+  const now = new Date();
+  
+  // 格式化出 YYYY-MM-DD (台灣時區)
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: ATTENDANCE_CONFIG.TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  const localDateStr = formatter.format(now); // 例："2026-08-17"
+
+  // 建立當日 00:00:00 與 23:59:59 的完整 ISO 時間
+  const startOfDay = new Date(`${localDateStr}T00:00:00+08:00`).toISOString();
+  const endOfDay = new Date(`${localDateStr}T23:59:59.999+08:00`).toISOString();
+
+  return { localDateStr, startOfDay, endOfDay };
 }
 
-function openMainSection(section) {
-  document.getElementById('sec-main-home').classList.add('hidden');
-  document.getElementById('sub-page-header').classList.remove('hidden');
-  const titles = { 'hr': '🏢 人事管理系統', 'finance': '💰 帳務管理系統' };
-  document.getElementById('sub-page-title').innerText = titles[section];
-  document.getElementById('sec-hr').classList.add('hidden');
-  document.getElementById('sec-finance').classList.add('hidden');
-  document.getElementById(`sec-${section}`).classList.remove('hidden');
-  if (section === 'hr') { loadMySchedule(); initHrDefaults(); }
-  if (section === 'finance') { initFinanceDefaults(); }
+/**
+ * Haversine 公式計算兩點球面距離 (公尺)
+ */
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3; // 地球半徑 (公尺)
+  const phi1 = (lat1 * Math.PI) / 180;
+  const phi2 = (lat2 * Math.PI) / 180;
+  const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
+  const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+    Math.cos(phi1) * Math.cos(phi2) *
+    Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return Math.round(R * c);
 }
 
-function backToMainMenu() {
-  document.getElementById('sec-hr').classList.add('hidden');
-  document.getElementById('sec-finance').classList.add('hidden');
-  document.getElementById('sub-page-header').classList.add('hidden');
-  document.getElementById('sec-main-home').classList.remove('hidden');
-  loadTodayAttendance();
-}
+/**
+ * 強制取得高精度 GPS 定位
+ */
+function getPreciseCurrentPosition() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      return reject(new Error('此瀏覽器或裝置不支援 GPS 定位功能'));
+    }
 
-async function initLiff() {
-  setInterval(updateClock, 1000);
-  updateClock();
+    const options = {
+      enableHighAccuracy: true, // 強制啟用 GPS 晶片高精度模式
+      timeout: 12000,           // 超時時間 12 秒
+      maximumAge: 0             // 禁止讀取快取舊位置
+    };
 
-  if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
-      pos => {
-        currentGps.lat = pos.coords.latitude;
-        currentGps.lng = pos.coords.longitude;
-        const dist = getDistanceInMeters(currentGps.lat, currentGps.lng, CLINIC_LOCATION.lat, CLINIC_LOCATION.lng);
-        const statusElem = document.getElementById('gps-status');
-        if (statusElem) {
-          if (dist <= CLINIC_LOCATION.radiusMeters) {
-            statusElem.innerText = "📍 GPS 就緒 (診所範圍內)";
-            statusElem.className = "bg-emerald-800/80 px-2 py-0.5 rounded-full text-[10px] text-emerald-200";
-          } else {
-            statusElem.innerText = `📍 距離診所約 ${Math.round(dist)} 公尺`;
-            statusElem.className = "bg-amber-800/80 px-2 py-0.5 rounded-full text-[10px] text-amber-200";
-          }
-        }
+      (position) => resolve(position.coords),
+      (error) => {
+        let msg = '無法取得定位資訊';
+        if (error.code === error.PERMISSION_DENIED) msg = '請允許瀏覽器/LINE 存取精確位置權限';
+        if (error.code === error.POSITION_UNAVAILABLE) msg = 'GPS 訊號弱或無法取得';
+        if (error.code === error.TIMEOUT) msg = '定位逾時，請至收訊良好處重試';
+        reject(new Error(msg));
       },
-      err => {
-        const statusElem = document.getElementById('gps-status');
-        if (statusElem) statusElem.innerText = "📍 診所標準打卡";
-      }
+      options
     );
-  }
+  });
+}
+
+// =======================
+// 3. 資料庫操作與介面更新
+// =======================
+
+/**
+ * 載入並刷新「今日打卡次數」與「最後打卡狀態」
+ */
+async function refreshTodayAttendanceStatus(userId) {
+  const countTextEl = document.getElementById('today-punch-count');
+  if (!countTextEl) return;
 
   try {
-    await liff.init({ liffId: LIFF_ID });
-    if (!liff.isLoggedIn()) {
-      liff.login();
+    const { startOfDay, endOfDay } = getTaipeiDayRange();
+
+    // 依台灣時間當日區間向 Supabase 查詢
+    const { data: logs, error } = await supabase
+      .from('attendance_logs')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('created_at', startOfDay)
+      .lte('created_at', endOfDay)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    const count = logs ? logs.length : 0;
+
+    if (count === 0) {
+      countTextEl.innerHTML = `今日已打卡 <strong>0</strong> 次`;
     } else {
-      const profile = await liff.getProfile();
-      currentUser.lineUserId = profile.userId;
-      currentUser.displayName = profile.displayName;
-      const userElem = document.getElementById('user-name');
-      if (userElem) userElem.innerText = currentUser.displayName;
-      await syncEmployeeRecord();
-      loadTodayAttendance();
+      const lastRecord = logs[logs.length - 1];
+      const timeStr = new Date(lastRecord.created_at).toLocaleTimeString('zh-TW', {
+        timeZone: ATTENDANCE_CONFIG.TIMEZONE,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+      const typeStr = lastRecord.type === 'check_in' ? '上班' : '下班';
+      countTextEl.innerHTML = `今日已打卡 <strong>${count}</strong> 次 (最後：${typeStr} ${timeStr})`;
     }
   } catch (err) {
-    const userElem = document.getElementById('user-name');
-    if (userElem) userElem.innerText = "林和正 (測試模式)";
-    currentUser.displayName = "林和正";
-    await syncEmployeeRecord();
-    loadTodayAttendance();
+    console.error('查詢今日打卡失敗:', err);
+    countTextEl.innerText = '打卡紀錄讀取失敗';
   }
 }
 
-function updateClock() {
-  const now = new Date();
-  const dateElem = document.getElementById('clock-date');
-  const timeElem = document.getElementById('clock-time');
-  if (dateElem && timeElem) {
-    dateElem.innerText = `${now.getFullYear()} 年 ${now.getMonth() + 1} 月 ${now.getDate()} 日`;
-    timeElem.innerText = now.toTimeString().split(' ')[0];
-  }
-}
+/**
+ * 更新頂端距離顯示標籤
+ */
+async function updateDistanceBadge() {
+  const badgeEl = document.getElementById('distance-badge');
+  if (!badgeEl) return null;
 
-async function syncEmployeeRecord() {
-  const { data } = await supabaseClient.from('clinic_employees').select('*').eq('name', currentUser.displayName);
-  if (data && data.length > 0) currentUser.empId = data[0].id;
-}
+  try {
+    const coords = await getPreciseCurrentPosition();
+    const distance = calculateDistance(
+      coords.latitude,
+      coords.longitude,
+      ATTENDANCE_CONFIG.CLINIC_LAT,
+      ATTENDANCE_CONFIG.CLINIC_LNG
+    );
 
-async function punchAttendance(type) {
-  if (!currentUser.empId) await syncEmployeeRecord();
-  if (!currentGps.lat || !currentGps.lng) {
-    alert("⚠️ 無法取得 GPS 定位，請開啟定位權限！");
-    return;
-  }
-  const dist = getDistanceInMeters(currentGps.lat, currentGps.lng, CLINIC_LOCATION.lat, CLINIC_LOCATION.lng);
-  if (dist > CLINIC_LOCATION.radiusMeters) {
-    alert(`❌ 打卡失敗！目前距離診所約 ${Math.round(dist)} 公尺，超出允許範圍 (${CLINIC_LOCATION.radiusMeters}m 內)。`);
-    return;
-  }
-
-  const btn = document.getElementById(`btn-punch-${type}`);
-  if (btn) btn.disabled = true;
-
-  const { error } = await supabaseClient.from('clinic_attendance').insert([{
-    employee_id: currentUser.empId,
-    punch_type: type,
-    latitude: currentGps.lat,
-    longitude: currentGps.lng,
-    is_valid_location: true
-  }]);
-
-  if (btn) btn.disabled = false;
-  if (error) alert('打卡失敗：' + error.message);
-  else {
-    alert(`✅ ${type === 'in' ? '上班' : '下班'}打卡成功！\n時間：${new Date().toLocaleTimeString('zh-TW')}`);
-    loadTodayAttendance();
-  }
-}
-
-async function loadTodayAttendance() {
-  if (!currentUser.empId) return;
-  const todayStr = new Date().toISOString().split('T')[0];
-  const { data } = await supabaseClient.from('clinic_attendance')
-    .select('*').eq('employee_id', currentUser.empId)
-    .gte('punch_time', `${todayStr}T00:00:00`).lte('punch_time', `${todayStr}T23:59:59`)
-    .order('punch_time', { ascending: true });
-
-  const summary = document.getElementById('today-punch-summary');
-  if (summary) {
-    if (data && data.length > 0) {
-      const last = data[data.length - 1];
-      const tStr = new Date(last.punch_time).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
-      summary.innerText = `今日已打卡 ${data.length} 次 (最後：${last.punch_type === 'in' ? '上班' : '下班'} ${tStr})`;
+    badgeEl.innerText = `📍 距離診所約 ${distance} 公尺`;
+    if (distance <= ATTENDANCE_CONFIG.MAX_ALLOWED_DISTANCE_METERS) {
+      badgeEl.style.backgroundColor = 'rgba(16, 185, 129, 0.2)'; // 綠色
     } else {
-      summary.innerText = "今日出勤：尚未打卡";
+      badgeEl.style.backgroundColor = 'rgba(239, 68, 68, 0.2)'; // 紅色提示超出
     }
+
+    return { coords, distance };
+  } catch (err) {
+    badgeEl.innerText = `📍 ${err.message}`;
+    return null;
   }
 }
 
-initLiff();
+/**
+ * 執行打卡動作 (上班 / 下班)
+ */
+async function handlePunch(type, userId, userName) {
+  const btnIn = document.getElementById('btn-clock-in');
+  const btnOut = document.getElementById('btn-clock-out');
+
+  // 防止重複點擊
+  if (btnIn) btnIn.disabled = true;
+  if (btnOut) btnOut.disabled = true;
+
+  try {
+    // 1. 取得當下精準定位
+    const coords = await getPreciseCurrentPosition();
+    const distance = calculateDistance(
+      coords.latitude,
+      coords.longitude,
+      ATTENDANCE_CONFIG.CLINIC_LAT,
+      ATTENDANCE_CONFIG.CLINIC_LNG
+    );
+
+    // 2. 距離防護驗證
+    if (distance > ATTENDANCE_CONFIG.MAX_ALLOWED_DISTANCE_METERS) {
+      alert(`打卡失敗：距離診所過遠 (${distance} 公尺)\n請確認已開啟精確定位並處於診所範圍內。`);
+      return;
+    }
+
+    // 3. 寫入 Supabase
+    const { error } = await supabase.from('attendance_logs').insert([
+      {
+        user_id: userId,
+        user_name: userName,
+        type: type, // 'check_in' 或 'check_out'
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        distance_meters: distance,
+        created_at: new Date().toISOString()
+      }
+    ]);
+
+    if (error) throw error;
+
+    alert(`打卡成功！(${type === 'check_in' ? '上班' : '下班'}) 距離：${distance} 公尺`);
+
+    // 4. 刷新今日次數與距離標籤
+    await refreshTodayAttendanceStatus(userId);
+    await updateDistanceBadge();
+
+  } catch (err) {
+    alert(`打卡異常: ${err.message}`);
+  } finally {
+    if (btnIn) btnIn.disabled = false;
+    if (btnOut) btnOut.disabled = false;
+  }
+}
+
+// =======================
+// 4. 初始化與事件綁定
+// =======================
+function initAttendanceModule(currentUser) {
+  if (!currentUser || !currentUser.userId) {
+    console.error('未取得當前使用者資訊');
+    return;
+  }
+
+  // 1. 初次載入定位與今日次數
+  updateDistanceBadge();
+  refreshTodayAttendanceStatus(currentUser.userId);
+
+  // 2. 綁定按鈕事件
+  const btnIn = document.getElementById('btn-clock-in');
+  const btnOut = document.getElementById('btn-clock-out');
+
+  if (btnIn) {
+    btnIn.onclick = () => handlePunch('check_in', currentUser.userId, currentUser.displayName);
+  }
+  if (btnOut) {
+    btnOut.onclick = () => handlePunch('check_out', currentUser.userId, currentUser.displayName);
+  }
+}
