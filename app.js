@@ -1,3 +1,4 @@
+// ==================== 設定與全域變數 ====================
 const LIFF_ID = '2011071479-1rEMTEv0'; 
 const SUPABASE_URL = 'https://bvbknaaljuwxrzvoqcrt.supabase.co'; 
 const SUPABASE_ANON_KEY = 'sb_publishable_fPdr9TBzrw9Ycb6GEpF7UA_zeLqblfo'; 
@@ -17,6 +18,7 @@ let cachedShifts = [];
 let cachedAllSchedules = [];
 let currentGps = { lat: null, lng: null };
 
+// ==================== 基礎工具與定位 ====================
 function getDistanceInMeters(lat1, lon1, lat2, lon2) {
   const R = 6371e3;
   const φ1 = lat1 * Math.PI / 180;
@@ -66,15 +68,28 @@ function refreshGpsLocation() {
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   }
-}function openMainSection(section) {
-  document.getElementById('sec-main-home').classList.add('hidden');
-  document.getElementById('sub-page-header').classList.remove('hidden');
+}
+
+function updateClock() {
+  const now = new Date();
+  const dateElem = document.getElementById('clock-date');
+  const timeElem = document.getElementById('clock-time');
+  if (dateElem) dateElem.innerText = `${now.getFullYear()} 年 ${now.getMonth() + 1} 月 ${now.getDate()} 日`;
+  if (timeElem) timeElem.innerText = now.toTimeString().split(' ')[0];
+}
+
+// ==================== 頁面切換與打卡 ====================
+function openMainSection(section) {
+  document.getElementById('sec-main-home')?.classList.add('hidden');
+  document.getElementById('sub-page-header')?.classList.remove('hidden');
 
   const titles = { 'hr': '🏢 人事管理系統', 'finance': '💰 帳務管理系統' };
-  document.getElementById('sub-page-title').innerText = titles[section];
-  document.getElementById('sec-hr').classList.add('hidden');
-  document.getElementById('sec-finance').classList.add('hidden');
-  document.getElementById(`sec-${section}`).classList.remove('hidden');
+  const titleElem = document.getElementById('sub-page-title');
+  if (titleElem) titleElem.innerText = titles[section] || '';
+
+  document.getElementById('sec-hr')?.classList.add('hidden');
+  document.getElementById('sec-finance')?.classList.add('hidden');
+  document.getElementById(`sec-${section}`)?.classList.remove('hidden');
 
   if (section === 'hr') {
     loadMySchedule();
@@ -86,70 +101,11 @@ function refreshGpsLocation() {
 }
 
 function backToMainMenu() {
-  document.getElementById('sec-hr').classList.add('hidden');
-  document.getElementById('sec-finance').classList.add('hidden');
-  document.getElementById('sub-page-header').classList.add('hidden');
-  document.getElementById('sec-main-home').classList.remove('hidden');
+  document.getElementById('sec-hr')?.classList.add('hidden');
+  document.getElementById('sec-finance')?.classList.add('hidden');
+  document.getElementById('sub-page-header')?.classList.add('hidden');
+  document.getElementById('sec-main-home')?.classList.remove('hidden');
   loadTodayAttendance();
-}
-
-function switchHrTab(tab) {
-  ['myschedule', 'request', 'scheduling'].forEach(t => {
-    document.getElementById(`hr-sec-${t}`).classList.add('hidden');
-    document.getElementById(`hr-tab-${t}`).className = "py-2 rounded-lg hover:text-slate-900 transition";
-  });
-  document.getElementById(`hr-sec-${tab}`).classList.remove('hidden');
-  document.getElementById(`hr-tab-${tab}`).className = "py-2 rounded-lg bg-indigo-600 text-white shadow-sm transition";
-
-  if (tab === 'request') initRequestPage();
-  if (tab === 'scheduling') loadScheduleAdminData();
-}
-
-function switchFinTab(tab) {
-  ['register', 'invoice', 'report'].forEach(t => {
-    document.getElementById(`fin-sec-${t}`).classList.add('hidden');
-    document.getElementById(`fin-tab-${t}`).className = "py-2 rounded-lg hover:text-slate-900 transition";
-  });
-  document.getElementById(`fin-sec-${tab}`).classList.remove('hidden');
-  document.getElementById(`fin-tab-${tab}`).className = "py-2 rounded-lg bg-slate-900 text-white shadow-sm transition";
-
-  if (tab === 'invoice') loadPendingInvoices();
-  if (tab === 'report') loadAdminData();
-}
-
-async function initLiff() {
-  setInterval(updateClock, 1000);
-  updateClock();
-  refreshGpsLocation();
-
-  try {
-    await liff.init({ liffId: LIFF_ID });
-    if (!liff.isLoggedIn()) {
-      liff.login();
-    } else {
-      const profile = await liff.getProfile();
-      currentUser.lineUserId = profile.userId;
-      currentUser.displayName = profile.displayName;
-      document.getElementById('user-name').innerText = currentUser.displayName;
-      await syncEmployeeRecord();
-      loadTodayAttendance();
-    }
-  } catch (err) {
-    document.getElementById('user-name').innerText = "林和正";
-    currentUser.displayName = "林和正";
-    await syncEmployeeRecord();
-    loadTodayAttendance();
-  }
-}
-
-function updateClock() {
-  const now = new Date();
-  const dateElem = document.getElementById('clock-date');
-  const timeElem = document.getElementById('clock-time');
-  if (dateElem && timeElem) {
-    dateElem.innerText = `${now.getFullYear()} 年 ${now.getMonth() + 1} 月 ${now.getDate()} 日`;
-    timeElem.innerText = now.toTimeString().split(' ')[0];
-  }
 }
 
 async function syncEmployeeRecord() {
@@ -162,7 +118,7 @@ async function syncEmployeeRecord() {
     console.warn('同步員工資料略過:', e);
   }
 }
-// 打卡邏輯（移除不存在的 user_name 欄位）
+
 async function punchAttendance(type) {
   if (!currentGps.lat || !currentGps.lng) {
     refreshGpsLocation();
@@ -192,7 +148,6 @@ async function punchAttendance(type) {
   }
 }
 
-// 載入當日打卡狀態 (台灣時區)
 async function loadTodayAttendance() {
   const summary = document.getElementById('today-punch-summary');
   if (!summary) return;
@@ -229,59 +184,25 @@ async function loadTodayAttendance() {
     summary.innerText = "今日出勤：尚未打卡";
   }
 }
+// ==================== 人事管理模組 ====================
+function switchHrTab(tab) {
+  ['myschedule', 'request', 'scheduling'].forEach(t => {
+    document.getElementById(`hr-sec-${t}`)?.classList.add('hidden');
+    const tabBtn = document.getElementById(`hr-tab-${t}`);
+    if (tabBtn) tabBtn.className = "py-2 rounded-lg hover:text-slate-900 transition";
+  });
+  document.getElementById(`hr-sec-${tab}`)?.classList.remove('hidden');
+  const activeTab = document.getElementById(`hr-tab-${tab}`);
+  if (activeTab) activeTab.className = "py-2 rounded-lg bg-indigo-600 text-white shadow-sm transition";
 
-asyn
-
-    if (error) throw error;
-
-    alert(`✅ ${type === 'in' ? '上班' : '下班'}打卡成功！\n時間：${new Date().toLocaleTimeString('zh-TW')}`);
-    await loadTodayAttendance();
-  } catch (err) {
-    alert('打卡失敗：' + err.message);
-  } finally {
-    if (btn) btn.disabled = false;
-  }
+  if (tab === 'request') initRequestPage();
+  if (tab === 'scheduling') loadScheduleAdminData();
 }
 
-async function loadTodayAttendance() {
-  const summary = document.getElementById('today-punch-summary');
-  if (!summary) return;
-
-  try {
-    const { startOfDay, endOfDay } = getTaipeiDayRange();
-    
-    let query = supabaseClient.from('clinic_attendance')
-      .select('*')
-      .gte('created_at', startOfDay)
-      .lte('created_at', endOfDay)
-      .order('created_at', { ascending: true });
-
-    if (currentUser.empId) {
-      query = query.eq('employee_id', currentUser.empId);
-    } else {
-      query = query.eq('user_name', currentUser.displayName);
-    }
-
-    const { data, error } = await query;
-
-    if (error || !data || data.length === 0) {
-      summary.innerText = "今日出勤：尚未打卡";
-      return;
-    }
-
-    const last = data[data.length - 1];
-    const timeStr = new Date(last.created_at || last.punch_time).toLocaleTimeString('zh-TW', {
-      timeZone: 'Asia/Taipei',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-    summary.innerHTML = `今日已打卡 <strong>${data.length}</strong> 次 (最後：${last.punch_type === 'in' ? '上班' : '下班'} ${timeStr})`;
-  } catch (e) {
-    summary.innerText = "今日出勤：尚未打卡";
-  }
-}function initHrDefaults() {
+function initHrDefaults() {
   const today = new Date();
-  document.getElementById('sch-date').value = today.toISOString().split('T')[0];
+  const schDate = document.getElementById('sch-date');
+  if (schDate) schDate.value = today.toISOString().split('T')[0];
 }
 
 async function loadMySchedule() {
@@ -295,6 +216,7 @@ async function loadMySchedule() {
     .order('date', { ascending: true });
 
   const container = document.getElementById('my-schedule-list');
+  if (!container) return;
   if (!data || data.length === 0) {
     container.innerHTML = '<p class="text-slate-400 text-center py-3">本月尚無排定班表</p>';
     return;
@@ -317,52 +239,59 @@ async function initRequestPage() {
   const today = new Date();
   const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
   const nextMonthStr = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`;
-  document.getElementById('req-target-month').value = nextMonthStr;
+  const reqMonth = document.getElementById('req-target-month');
+  if (reqMonth) reqMonth.value = nextMonthStr;
   updateRequestMonthDays();
 
   const currentDay = today.getDate();
   const deadlineTag = document.getElementById('request-deadline-tag');
   const submitBtn = document.getElementById('btn-submit-request');
 
-  if (currentDay > 20) {
-    deadlineTag.innerText = "⚠️ 本月預約已截止 (已鎖定)";
-    deadlineTag.className = "bg-rose-100 text-rose-800 text-[10px] px-2 py-0.5 rounded font-bold";
-    submitBtn.disabled = true;
-    submitBtn.innerText = "🔒 預約已於 20 號截止 (轉交護理長整合中)";
-    submitBtn.className = "w-full bg-slate-400 text-white font-bold py-2.5 rounded-xl text-xs cursor-not-allowed";
-  } else {
-    deadlineTag.innerText = `距離 20 號截止還剩 ${20 - currentDay} 天`;
-    deadlineTag.className = "bg-indigo-200 text-indigo-800 text-[10px] px-2 py-0.5 rounded font-bold";
-    submitBtn.disabled = false;
-    submitBtn.innerText = "📤 送出排班需求";
-    submitBtn.className = "w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl shadow-sm text-xs transition";
+  if (deadlineTag && submitBtn) {
+    if (currentDay > 20) {
+      deadlineTag.innerText = "⚠️ 本月預約已截止 (已鎖定)";
+      deadlineTag.className = "bg-rose-100 text-rose-800 text-[10px] px-2 py-0.5 rounded font-bold";
+      submitBtn.disabled = true;
+      submitBtn.innerText = "🔒 預約已於 20 號截止 (轉交護理長整合中)";
+      submitBtn.className = "w-full bg-slate-400 text-white font-bold py-2.5 rounded-xl text-xs cursor-not-allowed";
+    } else {
+      deadlineTag.innerText = `距離 20 號截止還剩 ${20 - currentDay} 天`;
+      deadlineTag.className = "bg-indigo-200 text-indigo-800 text-[10px] px-2 py-0.5 rounded font-bold";
+      submitBtn.disabled = false;
+      submitBtn.innerText = "📤 送出排班需求";
+      submitBtn.className = "w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl shadow-sm text-xs transition";
+    }
   }
 
   const { data: shifts } = await supabaseClient.from('clinic_shifts').select('*');
   const shiftSelect = document.getElementById('req-shift-select');
-  shiftSelect.innerHTML = '';
-  (shifts || []).forEach(s => {
-    const opt = document.createElement('option');
-    opt.value = s.id;
-    opt.innerText = `${s.shift_name} (${s.start_time.substring(0,5)} ~ ${s.end_time.substring(0,5)})`;
-    shiftSelect.appendChild(opt);
-  });
+  if (shiftSelect) {
+    shiftSelect.innerHTML = '';
+    (shifts || []).forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.innerText = `${s.shift_name} (${s.start_time.substring(0,5)} ~ ${s.end_time.substring(0,5)})`;
+      shiftSelect.appendChild(opt);
+    });
+  }
 
   loadMyRequests();
 }
 
 function updateRequestMonthDays() {
-  const monthStr = document.getElementById('req-target-month').value;
-  if (!monthStr) return;
+  const monthStr = document.getElementById('req-target-month')?.value;
+  const reqDate = document.getElementById('req-date');
+  if (!monthStr || !reqDate) return;
   const [y, m] = monthStr.split('-');
-  document.getElementById('req-date').min = `${y}-${m}-01`;
-  document.getElementById('req-date').max = `${y}-${m}-${new Date(y, m, 0).getDate()}`;
-  document.getElementById('req-date').value = `${y}-${m}-01`;
+  reqDate.min = `${y}-${m}-01`;
+  reqDate.max = `${y}-${m}-${new Date(y, m, 0).getDate()}`;
+  reqDate.value = `${y}-${m}-01`;
 }
 
 function toggleRequestShiftSelect() {
-  const type = document.getElementById('req-type').value;
+  const type = document.getElementById('req-type')?.value;
   const shiftGroup = document.getElementById('req-shift-group');
+  if (!shiftGroup) return;
   if (type === 'off') {
     shiftGroup.classList.add('hidden');
   } else {
@@ -370,7 +299,7 @@ function toggleRequestShiftSelect() {
   }
 }
 
-document.getElementById('schedule-request-form').addEventListener('submit', async (e) => {
+document.getElementById('schedule-request-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!currentUser.empId) await syncEmployeeRecord();
 
@@ -401,7 +330,8 @@ document.getElementById('schedule-request-form').addEventListener('submit', asyn
 
 async function loadMyRequests() {
   if (!currentUser.empId) return;
-  const targetMonth = document.getElementById('req-target-month').value;
+  const targetMonth = document.getElementById('req-target-month')?.value;
+  if (!targetMonth) return;
   const { data } = await supabaseClient.from('clinic_schedule_requests')
     .select('*, clinic_shifts(*)')
     .eq('employee_id', currentUser.empId)
@@ -409,6 +339,7 @@ async function loadMyRequests() {
     .order('request_date', { ascending: true });
 
   const container = document.getElementById('my-request-list');
+  if (!container) return;
   if (!data || data.length === 0) {
     container.innerHTML = '<p class="text-slate-400 text-center py-3">尚無登錄的預約需求</p>';
     return;
@@ -445,22 +376,26 @@ async function loadScheduleAdminData() {
   cachedShifts = shiftData || [];
 
   const empSelect = document.getElementById('sch-emp-select');
-  empSelect.innerHTML = '';
-  cachedEmployees.forEach(e => {
-    const opt = document.createElement('option');
-    opt.value = e.id;
-    opt.innerText = `${e.name} (${e.role === 'doctor' ? '醫師' : (e.role === 'nurse' ? '護理師' : '行政')})`;
-    empSelect.appendChild(opt);
-  });
+  if (empSelect) {
+    empSelect.innerHTML = '';
+    cachedEmployees.forEach(e => {
+      const opt = document.createElement('option');
+      opt.value = e.id;
+      opt.innerText = `${e.name} (${e.role === 'doctor' ? '醫師' : (e.role === 'nurse' ? '護理師' : '行政')})`;
+      empSelect.appendChild(opt);
+    });
+  }
 
   const shiftSelect = document.getElementById('sch-shift-select');
-  shiftSelect.innerHTML = '';
-  cachedShifts.forEach(s => {
-    const opt = document.createElement('option');
-    opt.value = s.id;
-    opt.innerText = `${s.shift_name} (${s.start_time.substring(0,5)} ~ ${s.end_time.substring(0,5)})`;
-    shiftSelect.appendChild(opt);
-  });
+  if (shiftSelect) {
+    shiftSelect.innerHTML = '';
+    cachedShifts.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.innerText = `${s.shift_name} (${s.start_time.substring(0,5)} ~ ${s.end_time.substring(0,5)})`;
+      shiftSelect.appendChild(opt);
+    });
+  }
 
   const { data: allSch } = await supabaseClient.from('clinic_schedules')
     .select('*, clinic_employees(*), clinic_shifts(*)')
@@ -474,6 +409,7 @@ async function loadScheduleAdminData() {
 
 function renderAllScheduleList() {
   const schList = document.getElementById('all-schedule-list');
+  if (!schList) return;
   if (cachedAllSchedules.length === 0) {
     schList.innerHTML = '<p class="text-slate-400 text-center py-3">尚無排班紀錄</p>';
     return;
@@ -496,17 +432,19 @@ function renderAllScheduleList() {
 }
 
 function checkShiftCompliance() {
-  const dateStr = document.getElementById('sch-date').value;
-  const empId = document.getElementById('sch-emp-select').value;
-  const shiftId = document.getElementById('sch-shift-select').value;
+  const dateStr = document.getElementById('sch-date')?.value;
+  const empId = document.getElementById('sch-emp-select')?.value;
+  const shiftId = document.getElementById('sch-shift-select')?.value;
   const warningDiv = document.getElementById('sch-warning-msg');
   const specialBox = document.getElementById('special-interval-box');
   const saveBtn = document.getElementById('btn-save-schedule');
 
-  warningDiv.classList.add('hidden');
-  specialBox.classList.add('hidden');
-  saveBtn.disabled = false;
-  saveBtn.className = "w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-xs shadow-sm transition";
+  if (warningDiv) warningDiv.classList.add('hidden');
+  if (specialBox) specialBox.classList.add('hidden');
+  if (saveBtn) {
+    saveBtn.disabled = false;
+    saveBtn.className = "w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-xs shadow-sm transition";
+  }
 
   if (!dateStr || !empId || !shiftId) return;
 
@@ -527,10 +465,14 @@ function checkShiftCompliance() {
   }
 
   if (consecutiveDays >= 6) {
-    warningDiv.innerText = `🚨 違規警告：該同仁已連續出勤 ${consecutiveDays} 日！依勞基法與四週變形工時規定不得連續工作超過 6 日。`;
-    warningDiv.classList.remove('hidden');
-    saveBtn.disabled = true;
-    saveBtn.className = "w-full bg-slate-400 text-white font-bold py-2.5 rounded-xl text-xs cursor-not-allowed";
+    if (warningDiv) {
+      warningDiv.innerText = `🚨 違規警告：該同仁已連續出勤 ${consecutiveDays} 日！依勞基法與四週變形工時規定不得連續工作超過 6 日。`;
+      warningDiv.classList.remove('hidden');
+    }
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.className = "w-full bg-slate-400 text-white font-bold py-2.5 rounded-xl text-xs cursor-not-allowed";
+    }
     return;
   }
 
@@ -549,14 +491,20 @@ function checkShiftCompliance() {
     if (intervalHours >= 24) intervalHours -= 24;
 
     if (intervalHours < 8) {
-      warningDiv.innerText = `🚨 強制違規：與前一日班別間隔僅 ${intervalHours.toFixed(1)} 小時，小於勞基法法定下限 8 小時，禁止排班！`;
-      warningDiv.classList.remove('hidden');
-      saveBtn.disabled = true;
-      saveBtn.className = "w-full bg-slate-400 text-white font-bold py-2.5 rounded-xl text-xs cursor-not-allowed";
+      if (warningDiv) {
+        warningDiv.innerText = `🚨 強制違規：與前一日班別間隔僅 ${intervalHours.toFixed(1)} 小時，小於勞基法法定下限 8 小時，禁止排班！`;
+        warningDiv.classList.remove('hidden');
+      }
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.className = "w-full bg-slate-400 text-white font-bold py-2.5 rounded-xl text-xs cursor-not-allowed";
+      }
     } else if (intervalHours < 11) {
-      specialBox.classList.remove('hidden');
-      warningDiv.innerText = `⚠️ 提醒：與前日班別間隔為 ${intervalHours.toFixed(1)} 小時（小於原則11小時），需勾選並註記符合勞資會議決議之「緊急透析/教育訓練」事由。`;
-      warningDiv.classList.remove('hidden');
+      if (specialBox) specialBox.classList.remove('hidden');
+      if (warningDiv) {
+        warningDiv.innerText = `⚠️ 提醒：與前日班別間隔為 ${intervalHours.toFixed(1)} 小時（小於原則11小時），需勾選並註記符合勞資會議決議之「緊急透析/教育訓練」事由。`;
+        warningDiv.classList.remove('hidden');
+      }
     }
   }
 }
@@ -588,10 +536,25 @@ async function saveSchedule() {
     loadScheduleAdminData();
   }
 }
+// ==================== 帳務管理與 OCR 模組 ====================
+function switchFinTab(tab) {
+  ['register', 'invoice', 'report'].forEach(t => {
+    document.getElementById(`fin-sec-${t}`)?.classList.add('hidden');
+    const tabBtn = document.getElementById(`fin-tab-${t}`);
+    if (tabBtn) tabBtn.className = "py-2 rounded-lg hover:text-slate-900 transition";
+  });
+  document.getElementById(`fin-sec-${tab}`)?.classList.remove('hidden');
+  const activeTab = document.getElementById(`fin-tab-${tab}`);
+  if (activeTab) activeTab.className = "py-2 rounded-lg bg-slate-900 text-white shadow-sm transition";
+
+  if (tab === 'invoice') loadPendingInvoices();
+  if (tab === 'report') loadAdminData();
+}
 
 function initFinanceDefaults() {
   const today = new Date();
-  document.getElementById('report-month').value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  const repMonth = document.getElementById('report-month');
+  if (repMonth) repMonth.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   updateFormMode();
 }
 
@@ -601,29 +564,33 @@ const categoryOptions = {
 };
 
 function updateFormMode() {
-  const type = document.querySelector('input[name="type"]:checked').value;
+  const typeElem = document.querySelector('input[name="type"]:checked');
+  if (!typeElem) return;
+  const type = typeElem.value;
   const supplierGroup = document.getElementById('supplier-group');
   const categoryGroup = document.getElementById('category-group');
   const deliveryDocSection = document.getElementById('delivery-doc-mode-section');
 
   if (type === 'delivery' || type === 'pharma') {
-    supplierGroup.classList.remove('hidden');
-    categoryGroup.classList.add('hidden');
-    deliveryDocSection.classList.remove('hidden');
+    supplierGroup?.classList.remove('hidden');
+    categoryGroup?.classList.add('hidden');
+    deliveryDocSection?.classList.remove('hidden');
     toggleDocMode();
   } else {
-    supplierGroup.classList.add('hidden');
-    categoryGroup.classList.remove('hidden');
-    deliveryDocSection.classList.add('hidden');
+    supplierGroup?.classList.add('hidden');
+    categoryGroup?.classList.remove('hidden');
+    deliveryDocSection?.classList.add('hidden');
 
     const categorySelect = document.getElementById('category');
-    categorySelect.innerHTML = '';
-    categoryOptions[type].forEach(item => {
-      const opt = document.createElement('option');
-      opt.value = item;
-      opt.innerText = item;
-      categorySelect.appendChild(opt);
-    });
+    if (categorySelect) {
+      categorySelect.innerHTML = '';
+      categoryOptions[type].forEach(item => {
+        const opt = document.createElement('option');
+        opt.value = item;
+        opt.innerText = item;
+        categorySelect.appendChild(opt);
+      });
+    }
   }
 }
 
@@ -634,13 +601,13 @@ function toggleDocMode() {
   const receiptInput = document.getElementById('receipt');
 
   if (mode === 'receipt_only') {
-    receiptBox.classList.remove('hidden');
-    invoiceBox.classList.add('hidden');
-    receiptInput.required = true;
+    receiptBox?.classList.remove('hidden');
+    invoiceBox?.classList.add('hidden');
+    if (receiptInput) receiptInput.required = true;
   } else {
-    receiptBox.classList.add('hidden');
-    invoiceBox.classList.remove('hidden');
-    receiptInput.required = false;
+    receiptBox?.classList.add('hidden');
+    invoiceBox?.classList.remove('hidden');
+    if (receiptInput) receiptInput.required = false;
   }
 }
 
@@ -733,14 +700,6 @@ async function processInvoiceImage(inputElem, targetNoId, targetAmtId, statusEle
     }
 
     if (!detected) {
-      try {
-        const html5Qr = new Html5Qrcode("pending-invoice-list");
-        const decodedText = await html5Qr.scanFile(file, false);
-        detected = parseInvoiceQr(decodedText);
-      } catch (e) { }
-    }
-
-    if (!detected) {
       if (statusTag) statusTag.innerText = "🔍 OCR 文字辨識中...";
       const ocrRes = await Tesseract.recognize(mainCanvas.toDataURL('image/png'), 'eng', { logger: m => {} });
       const text = ocrRes.data.text || "";
@@ -775,11 +734,13 @@ async function processInvoiceImage(inputElem, targetNoId, targetAmtId, statusEle
   }
 }
 
-document.getElementById('cash-form').addEventListener('submit', async (e) => {
+document.getElementById('cash-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const submitBtn = document.getElementById('submit-btn');
-  submitBtn.disabled = true;
-  submitBtn.innerText = "處理中...";
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerText = "處理中...";
+  }
 
   try {
     const type = document.querySelector('input[name="type"]:checked').value;
@@ -803,8 +764,10 @@ document.getElementById('cash-form').addEventListener('submit', async (e) => {
 
         if (!invoiceNo) {
           alert('⚠️ 請輸入或拍照辨識發票號碼！');
-          submitBtn.disabled = false;
-          submitBtn.innerText = "確認點收並送出";
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerText = "確認點收並送出";
+          }
           return;
         }
 
@@ -812,8 +775,10 @@ document.getElementById('cash-form').addEventListener('submit', async (e) => {
         if (dupCount > 0) {
           const confirmDup = confirm(`🚨 重複發票警示！\n\n發票【${invoiceNo}】已存在 ${dupCount} 筆。\n確定建立嗎？`);
           if (!confirmDup) {
-            submitBtn.disabled = false;
-            submitBtn.innerText = "確認點收並送出";
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.innerText = "確認點收並送出";
+            }
             return;
           }
         }
@@ -862,18 +827,22 @@ document.getElementById('cash-form').addEventListener('submit', async (e) => {
 
     alert((type === 'delivery' || type === 'pharma') ? ((status === 'unpaid') ? '✅ 隨貨發票已登記！已歸入待付款。' : '✅ 簽收單已上傳！已進入待補發票。') : '✅ 登記成功！');
     document.getElementById('cash-form').reset();
-    document.getElementById('reg-invoice-no').value = '';
+    const regInv = document.getElementById('reg-invoice-no');
+    if (regInv) regInv.value = '';
     updateFormMode();
   } catch (err) {
     alert('❌ 失敗：' + err.message);
   } finally {
-    submitBtn.disabled = false;
-    submitBtn.innerText = "確認點收並送出";
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerText = "確認點收並送出";
+    }
   }
 });
 
 async function loadPendingInvoices() {
   const container = document.getElementById('pending-invoice-list');
+  if (!container) return;
   container.innerHTML = '<p class="text-center text-xs text-slate-400 py-4">載入中...</p>';
   const { data } = await supabaseClient.from('cash_log').select('*').eq('status', 'pending_invoice').order('created_at', { ascending: false });
 
@@ -905,14 +874,14 @@ function openInvoiceModal(id) {
   document.getElementById('modal-amount').value = '';
   const today = new Date();
   document.getElementById('modal-due-date').value = new Date(today.getFullYear(), today.getMonth() + 2, 0).toISOString().split('T')[0];
-  document.getElementById('invoice-modal').classList.remove('hidden');
+  document.getElementById('invoice-modal')?.classList.remove('hidden');
 }
 
 function closeInvoiceModal() {
-  document.getElementById('invoice-modal').classList.add('hidden');
+  document.getElementById('invoice-modal')?.classList.add('hidden');
 }
 
-document.getElementById('modal-invoice-form').addEventListener('submit', async (e) => {
+document.getElementById('modal-invoice-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const id = document.getElementById('modal-id').value;
   const invoiceNo = document.getElementById('modal-invoice-no').value.trim().toUpperCase();
@@ -944,9 +913,11 @@ async function loadAdminData() {
   const pendingItems = cachedAllData.filter(d => d.status === 'pending_invoice');
   const unpaidItems = cachedAllData.filter(d => d.status === 'unpaid');
 
-  document.getElementById('stat-pending-count').innerText = `${pendingItems.length} 筆`;
+  const pendingCount = document.getElementById('stat-pending-count');
+  if (pendingCount) pendingCount.innerText = `${pendingItems.length} 筆`;
   const unpaidTotal = unpaidItems.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
-  document.getElementById('stat-unpaid-total').innerText = `NT$ ${unpaidTotal.toLocaleString()}`;
+  const unpaidTotalElem = document.getElementById('stat-unpaid-total');
+  if (unpaidTotalElem) unpaidTotalElem.innerText = `NT$ ${unpaidTotal.toLocaleString()}`;
 
   renderSupplierTimeline(unpaidItems);
   renderAdminUnpaidList(unpaidItems);
@@ -954,6 +925,7 @@ async function loadAdminData() {
 
 function renderSupplierTimeline(unpaidItems) {
   const timelineContainer = document.getElementById('supplier-timeline-list');
+  if (!timelineContainer) return;
   if (unpaidItems.length === 0) {
     timelineContainer.innerHTML = '<p class="text-center text-xs text-slate-400 py-3">🎉 目前無未結餘應付帳款</p>';
     return;
@@ -991,6 +963,7 @@ function renderSupplierTimeline(unpaidItems) {
 
 function renderAdminUnpaidList(unpaidItems) {
   const container = document.getElementById('admin-data-list');
+  if (!container) return;
   if (unpaidItems.length === 0) {
     container.innerHTML = '<p class="text-center text-xs text-slate-400 py-3">無待核銷項目</p>';
     return;
@@ -1012,7 +985,7 @@ function renderAdminUnpaidList(unpaidItems) {
 }
 
 function generateMonthlyReport() {
-  const targetMonth = document.getElementById('report-month').value;
+  const targetMonth = document.getElementById('report-month')?.value;
   if (!targetMonth) return;
 
   const monthData = cachedAllData.filter(d => {
@@ -1042,19 +1015,21 @@ function generateMonthlyReport() {
   document.getElementById('rep-delivery').innerText = `NT$ ${totalDelivery.toLocaleString()}`;
 
   const breakdownList = document.getElementById('rep-supplier-breakdown');
-  breakdownList.innerHTML = '';
-  Object.entries(supplierSums).forEach(([sup, sum]) => {
-    const li = document.createElement('li');
-    li.className = "flex justify-between border-b border-slate-100 py-0.5";
-    li.innerHTML = `<span>${sup}</span><span class="font-bold">NT$ ${sum.toLocaleString()}</span>`;
-    breakdownList.appendChild(li);
-  });
+  if (breakdownList) {
+    breakdownList.innerHTML = '';
+    Object.entries(supplierSums).forEach(([sup, sum]) => {
+      const li = document.createElement('li');
+      li.className = "flex justify-between border-b border-slate-100 py-0.5";
+      li.innerHTML = `<span>${sup}</span><span class="font-bold">NT$ ${sum.toLocaleString()}</span>`;
+      breakdownList.appendChild(li);
+    });
+  }
 
-  document.getElementById('report-result-box').classList.remove('hidden');
+  document.getElementById('report-result-box')?.classList.remove('hidden');
 }
 
 function exportCsvReport() {
-  const targetMonth = document.getElementById('report-month').value || new Date().toISOString().substring(0, 7);
+  const targetMonth = document.getElementById('report-month')?.value || new Date().toISOString().substring(0, 7);
   const listToExport = cachedAllData;
   let csvText = "建檔時間,登記類型,廠商名稱,分類項目,金額(NT$),發票號碼,付款到期日,點收人員,備註,請款狀態\n";
 
@@ -1082,5 +1057,32 @@ async function markAsPaid(id) {
   loadAdminData();
 }
 
-initLiff();
+// ==================== 系統初始化入口 ====================
+async function initLiff() {
+  setInterval(updateClock, 1000);
+  updateClock();
+  refreshGpsLocation();
 
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) {
+      liff.login();
+    } else {
+      const profile = await liff.getProfile();
+      currentUser.lineUserId = profile.userId;
+      currentUser.displayName = profile.displayName;
+      const userElem = document.getElementById('user-name');
+      if (userElem) userElem.innerText = currentUser.displayName;
+      await syncEmployeeRecord();
+      loadTodayAttendance();
+    }
+  } catch (err) {
+    const userElem = document.getElementById('user-name');
+    if (userElem) userElem.innerText = "林和正";
+    currentUser.displayName = "林和正";
+    await syncEmployeeRecord();
+    loadTodayAttendance();
+  }
+}
+
+initLiff();
