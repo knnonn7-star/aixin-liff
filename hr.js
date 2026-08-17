@@ -4,6 +4,7 @@ let cachedShifts = [];
 let cachedMonthSchedules = [];
 let cachedMonthRequests = [];
 let editingDate = null;
+let userReqDate = null;
 
 // 固定週一至五上班、週六加班，不參與透析輪班但可自填特休的同仁
 const FIXED_STAFF_ROLES = {
@@ -25,7 +26,7 @@ const NATIONAL_HOLIDAYS_2026 = [
   { name: '行憲紀念日', date: '2026-12-25' }
 ];
 
-// ==================== 頁籤切換與權限管制 ====================
+// ==================== 頁籤切換與初始化 ====================
 function switchHrTab(tab) {
   const isAdminUser = (currentUser.displayName === '陳慧倪' || currentUser.displayName === '林和正' || currentUser.role === 'doctor');
   
@@ -43,32 +44,31 @@ function switchHrTab(tab) {
   const activeTab = document.getElementById(`hr-tab-${tab}`);
   if (activeTab) activeTab.className = "py-2 rounded-lg bg-indigo-600 text-white shadow-sm transition";
 
+  if (tab === 'myschedule') loadMySchedule();
   if (tab === 'request') initRequestPage();
   if (tab === 'scheduling') initScheduleAdmin();
 }
 
 function initHrDefaults() {
   const today = new Date();
+  const thisMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
   const nextMonthStr = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`;
+
+  const mySchMonth = document.getElementById('my-sch-month');
+  if (mySchMonth && !mySchMonth.value) mySchMonth.value = thisMonthStr;
+
+  const reqMonthElem = document.getElementById('req-target-month');
+  if (reqMonthElem && !reqMonthElem.value) reqMonthElem.value = nextMonthStr;
+
   const adminMonthElem = document.getElementById('admin-sch-month');
-  if (adminMonthElem) adminMonthElem.value = nextMonthStr;
+  if (adminMonthElem && !adminMonthElem.value) adminMonthElem.value = nextMonthStr;
 }
 
-// 判斷人員身份輔助函式
-function isFixedStaff(name) {
-  return !!FIXED_STAFF_ROLES[name];
-}
+function isFixedStaff(name) { return !!FIXED_STAFF_ROLES[name]; }
+function isDoctor(name, role) { return name === '林和正' || role === 'doctor'; }
+function isDialysisNurse(name, role) { return !isFixedStaff(name) && !isDoctor(name, role); }
 
-function isDoctor(name, role) {
-  return name === '林和正' || role === 'doctor';
-}
-
-function isDialysisNurse(name, role) {
-  return !isFixedStaff(name) && !isDoctor(name, role);
-}
-
-// 取得人員編號代碼 (透析護理人員自動指派 01, 02...)
 function getEmpCode(emp) {
   if (isDoctor(emp.name, emp.role)) return '醫師';
   if (isFixedStaff(emp.name)) return FIXED_STAFF_ROLES[emp.name].roleName;
@@ -77,158 +77,226 @@ function getEmpCode(emp) {
   return idx >= 0 ? String(idx + 1).padStart(2, '0') : '護理';
 }
 
-// ==================== 查詢個人班表 ====================
+// ==================== 1. 「我的班表」月曆視圖 ====================
 async function loadMySchedule() {
-  if (!currentUser.empId) return;
-  const today = new Date();
-  const firstDay = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
-  const { data } = await supabaseClient.from('clinic_schedules')
+  if (!currentUser.empId) await syncEmployeeRecord();
+  initHrDefaults();
+
+  const monthStr = document.getElementById('my-sch-month')?.value;
+  if (!monthStr) return;
+
+  const [y, m] = monthStr.split('-').map(Number);
+  const firstDayObj = new Date(y, m - 1, 1);
+  const totalDays = new Date(y, m, 0).getDate();
+  const startDayOfWeek = firstDayObj.getDay();
+
+  const startDateStr = `${monthStr}-01`;
+  const endDateStr = `${monthStr}-${totalDays}`;
+
+  const { data: mySchedules } = await supabaseClient.from('clinic_schedules')
     .select('*, clinic_shifts(*)')
     .eq('employee_id', currentUser.empId)
-    .gte('date', firstDay)
-    .order('date', { ascending: true });
+    .gte('date', startDateStr)
+    .lte('date', endDateStr);
 
-  const container = document.getElementById('my-schedule-list');
-  if (!container) return;
-  if (!data || data.length === 0) {
-    container.innerHTML = '<p class="text-slate-400 text-center py-3">本月尚無特別排定班表 (固定班人員依常規出勤)</p>';
-    return;
+  const grid = document.getElementById('my-calendar-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  for (let i = 0; i < startDayOfWeek; i++) {
+    const empty = document.createElement('div');
+    empty.className = "min-h-[60px] bg-slate-50/50 rounded-lg border border-dashed border-slate-200";
+    grid.appendChild(empty);
   }
 
-  container.innerHTML = '';
-  data.forEach(s => {
-    let shiftName = s.shift_id === 'off' ? '🏖️ 特休日' : (s.shift_id === 'afternoon' ? '中班' : '早班');
-    const badgeColor = s.shift_id === 'off' ? 'bg-rose-100 text-rose-800' : 'bg-indigo-100 text-indigo-800';
-    const row = document.createElement('div');
-    row.className = "flex justify-between items-center bg-white p-2.5 rounded-lg border border-slate-200 text-xs";
-    row.innerHTML = `
-      <span class="font-bold text-slate-700">${s.date}</span>
-      <span class="${badgeColor} font-bold px-2.5 py-0.5 rounded text-[11px]">${shiftName}</span>
-    `;
-    container.appendChild(row);
-  });
+  for (let d = 1; d <= totalDays; d++) {
+    const dayStr = `${monthStr}-${String(d).padStart(2, '0')}`;
+    const dayOfWeek = new Date(y, m - 1, d).getDay();
+    const sch = (mySchedules || []).find(s => s.date === dayStr);
+
+    const cell = document.createElement('div');
+    cell.className = `min-h-[60px] p-1 rounded-lg border flex flex-col justify-between text-xs ${
+      dayOfWeek === 0 ? 'bg-rose-50/40 border-rose-200' : 'bg-white border-slate-200'
+    }`;
+
+    let headerHtml = `<div class="flex justify-between items-center font-bold"><span class="${dayOfWeek === 0 ? 'text-rose-600' : 'text-slate-700'}">${d}</span>`;
+    if (dayOfWeek === 0) headerHtml += `<span class="text-[9px] bg-rose-200 text-rose-800 px-1 rounded">休診</span>`;
+    headerHtml += `</div>`;
+
+    let statusHtml = `<div class="mt-1">`;
+    if (dayOfWeek === 0) {
+      statusHtml += `<span class="text-[10px] text-slate-300">固定休</span>`;
+    } else if (sch) {
+      if (sch.shift_id === 'off') {
+        statusHtml += `<span class="text-[10px] bg-rose-100 text-rose-800 font-bold px-1.5 py-0.5 rounded block text-center">🏖️ 特休</span>`;
+      } else if (sch.shift_id === 'afternoon' || sch.clinic_shifts?.shift_name?.includes('中')) {
+        statusHtml += `<span class="text-[10px] bg-blue-100 text-blue-900 font-bold px-1.5 py-0.5 rounded block text-center">🌤️ 中班</span>`;
+      } else {
+        statusHtml += `<span class="text-[10px] bg-amber-100 text-amber-900 font-bold px-1.5 py-0.5 rounded block text-center">☀️ 早班</span>`;
+      }
+    } else {
+      if (isFixedStaff(currentUser.displayName)) {
+        statusHtml += `<span class="text-[10px] bg-emerald-50 text-emerald-800 px-1 py-0.5 rounded block text-center">常規班</span>`;
+      } else {
+        statusHtml += `<span class="text-[10px] text-slate-300 block text-center">未排班</span>`;
+      }
+    }
+    statusHtml += `</div>`;
+
+    cell.innerHTML = headerHtml + statusHtml;
+    grid.appendChild(cell);
+  }
 }
 
-// ==================== 15號前預約排班 / 特休日登記 ====================
+// ==================== 2. 「預約排班」月曆點選視圖 ====================
 async function initRequestPage() {
+  if (!currentUser.empId) await syncEmployeeRecord();
+  initHrDefaults();
+
   const today = new Date();
-  const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-  const nextMonthStr = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`;
-  const reqMonth = document.getElementById('req-target-month');
-  if (reqMonth) reqMonth.value = nextMonthStr;
-  updateRequestMonthDays();
-
-  const reqDate = document.getElementById('req-date');
-  if (reqDate) reqDate.onchange = updateRequestShiftOptions;
-
   const currentDay = today.getDate();
   const deadlineTag = document.getElementById('request-deadline-tag');
-  const submitBtn = document.getElementById('btn-submit-request');
   const isAdminUser = (currentUser.displayName === '陳慧倪' || currentUser.displayName === '林和正' || currentUser.role === 'doctor');
   const isFixed = isFixedStaff(currentUser.displayName);
 
-  if (currentDay > 15 && !isAdminUser && !isFixed) {
-    if (deadlineTag) {
-      deadlineTag.innerText = "⚠️ 護理預約已於 15 號截止 (護理長排班整合中)";
+  if (deadlineTag) {
+    if (currentDay > 15 && !isAdminUser && !isFixed) {
+      deadlineTag.innerText = "⚠️ 預約已於 15 號截止 (護理長排班中)";
       deadlineTag.className = "bg-rose-100 text-rose-800 text-[10px] px-2 py-0.5 rounded font-bold";
-    }
-    if (submitBtn) {
-      submitBtn.disabled = true;
-      submitBtn.innerText = "🔒 預約已截止 (月底前公布班表)";
-      submitBtn.className = "w-full bg-slate-400 text-white font-bold py-2.5 rounded-xl text-xs cursor-not-allowed";
-    }
-  } else {
-    if (deadlineTag) {
-      deadlineTag.innerText = isFixed ? "🌿 固定班同仁：特休登記專用" : (currentDay <= 15 ? `距離 15 號截止還剩 ${15 - currentDay} 天` : `管理職特別編輯模式`);
+    } else {
+      deadlineTag.innerText = isFixed ? "🌿 固定班特休登記" : (currentDay <= 15 ? `距離 15 號截止剩 ${15 - currentDay} 天` : `管理職特別編輯`);
       deadlineTag.className = "bg-indigo-200 text-indigo-800 text-[10px] px-2 py-0.5 rounded font-bold";
     }
-    if (submitBtn) {
-      submitBtn.disabled = false;
-      submitBtn.innerText = isFixed ? "🏖️ 送出特休日登記" : "📤 送出排班/休假預約";
-      submitBtn.className = "w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl shadow-sm text-xs transition";
-    }
   }
 
-  // 固定班同仁自動鎖定為預約休假(特休)
-  const reqTypeElem = document.getElementById('req-type');
-  if (reqTypeElem && isFixed) {
-    reqTypeElem.innerHTML = '<option value="off">🏖️ 登記特休日 (休假)</option>';
-    document.getElementById('req-shift-group')?.classList.add('hidden');
-  }
-
-  updateRequestShiftOptions();
-  loadMyRequests();
+  loadRequestCalendar();
 }
 
-function updateRequestMonthDays() {
+async function loadRequestCalendar() {
   const monthStr = document.getElementById('req-target-month')?.value;
-  const reqDate = document.getElementById('req-date');
-  if (!monthStr || !reqDate) return;
-  const [y, m] = monthStr.split('-');
-  reqDate.min = `${y}-${m}-01`;
-  reqDate.max = `${y}-${m}-${new Date(y, m, 0).getDate()}`;
-  reqDate.value = `${y}-${m}-01`;
+  if (!monthStr) return;
+
+  const [y, m] = monthStr.split('-').map(Number);
+  const firstDayObj = new Date(y, m - 1, 1);
+  const totalDays = new Date(y, m, 0).getDate();
+  const startDayOfWeek = firstDayObj.getDay();
+
+  const startDateStr = `${monthStr}-01`;
+  const endDateStr = `${monthStr}-${totalDays}`;
+
+  const { data: myRequests } = await supabaseClient.from('clinic_schedule_requests')
+    .select('*')
+    .eq('employee_id', currentUser.empId)
+    .gte('request_date', startDateStr)
+    .lte('request_date', endDateStr);
+
+  const grid = document.getElementById('req-calendar-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  for (let i = 0; i < startDayOfWeek; i++) {
+    const empty = document.createElement('div');
+    empty.className = "min-h-[65px] bg-slate-50/50 rounded-lg border border-dashed border-slate-200";
+    grid.appendChild(empty);
+  }
+
+  for (let d = 1; d <= totalDays; d++) {
+    const dayStr = `${monthStr}-${String(d).padStart(2, '0')}`;
+    const dayOfWeek = new Date(y, m - 1, d).getDay();
+    const req = (myRequests || []).find(r => r.request_date === dayStr);
+
+    const cell = document.createElement('div');
+    cell.className = `min-h-[65px] p-1 rounded-lg border flex flex-col justify-between text-xs cursor-pointer transition hover:shadow-md ${
+      dayOfWeek === 0 ? 'bg-rose-50/40 border-rose-200 cursor-not-allowed' : (req ? 'bg-indigo-50/60 border-indigo-300' : 'bg-white border-slate-200 hover:border-indigo-400')
+    }`;
+    
+    if (dayOfWeek !== 0) {
+      cell.onclick = () => openUserReqModal(dayStr, dayOfWeek, req);
+    }
+
+    let headerHtml = `<div class="flex justify-between items-center font-bold"><span class="${dayOfWeek === 0 ? 'text-rose-600' : 'text-slate-700'}">${d}</span>`;
+    if (dayOfWeek === 0) headerHtml += `<span class="text-[9px] bg-rose-200 text-rose-800 px-1 rounded">休診</span>`;
+    headerHtml += `</div>`;
+
+    let reqHtml = `<div class="mt-1">`;
+    if (dayOfWeek === 0) {
+      reqHtml += `<span class="text-[10px] text-slate-300">固定休</span>`;
+    } else if (req) {
+      if (req.request_type === 'off') {
+        reqHtml += `<span class="text-[10px] bg-rose-500 text-white font-bold px-1.5 py-0.5 rounded block text-center">🏖️ 預約休假</span>`;
+      } else if (req.shift_id === 'afternoon') {
+        reqHtml += `<span class="text-[10px] bg-blue-600 text-white font-bold px-1.5 py-0.5 rounded block text-center">🌤️ 預約中班</span>`;
+      } else {
+        reqHtml += `<span class="text-[10px] bg-amber-500 text-white font-bold px-1.5 py-0.5 rounded block text-center">☀️ 預約早班</span>`;
+      }
+    } else {
+      reqHtml += `<span class="text-[10px] text-slate-300 block text-center">＋點擊登記</span>`;
+    }
+    reqHtml += `</div>`;
+
+    cell.innerHTML = headerHtml + reqHtml;
+    grid.appendChild(cell);
+  }
 }
 
-function updateRequestShiftOptions() {
-  const dateStr = document.getElementById('req-date')?.value;
-  const selectElem = document.getElementById('req-shift-select');
-  if (!selectElem || !dateStr) return;
+// 點擊日曆格子彈出預約設定
+function openUserReqModal(dateStr, dayOfWeek, existingReq) {
+  const today = new Date();
+  const isAdminUser = (currentUser.displayName === '陳慧倪' || currentUser.displayName === '林和正' || currentUser.role === 'doctor');
+  const isFixed = isFixedStaff(currentUser.displayName);
 
-  const dayOfWeek = new Date(dateStr).getDay();
-  selectElem.innerHTML = '';
-
-  if (dayOfWeek === 0) {
-    selectElem.innerHTML = '<option value="">週日休診</option>';
+  if (today.getDate() > 15 && !isAdminUser && !isFixed) {
+    alert('⚠️ 預約已於 15 號截止，目前為護理長整合排班期。若有特殊需求請洽護理長。');
     return;
   }
 
-  const optMorning = document.createElement('option');
-  optMorning.value = 'morning';
-  optMorning.innerText = '早班';
-  selectElem.appendChild(optMorning);
+  userReqDate = dateStr;
+  document.getElementById('user-req-date-title').innerText = `📅 ${dateStr} 預約排班`;
 
+  const afternoonOpt = document.getElementById('user-req-afternoon-opt');
   if (dayOfWeek === 1 || dayOfWeek === 3 || dayOfWeek === 5) {
-    const optAfternoon = document.createElement('option');
-    optAfternoon.value = 'afternoon';
-    optAfternoon.innerText = '中班';
-    selectElem.appendChild(optAfternoon);
-  }
-}
-
-function toggleRequestShiftSelect() {
-  const type = document.getElementById('req-type')?.value;
-  const shiftGroup = document.getElementById('req-shift-group');
-  if (!shiftGroup) return;
-  if (type === 'off' || isFixedStaff(currentUser.displayName)) {
-    shiftGroup.classList.add('hidden');
+    afternoonOpt.classList.remove('hidden');
   } else {
-    shiftGroup.classList.remove('hidden');
-    updateRequestShiftOptions();
+    afternoonOpt.classList.add('hidden');
   }
+
+  const deleteBtn = document.getElementById('btn-delete-req');
+  const reasonInput = document.getElementById('user-req-reason');
+
+  if (existingReq) {
+    deleteBtn.classList.remove('hidden');
+    reasonInput.value = existingReq.reason || '';
+    const radios = document.querySelectorAll('input[name="user-req-type"]');
+    radios.forEach(r => {
+      if (existingReq.request_type === 'off' && r.value === 'off') r.checked = true;
+      else if (existingReq.shift_id === r.value) r.checked = true;
+    });
+  } else {
+    deleteBtn.classList.add('hidden');
+    reasonInput.value = '';
+    document.querySelector('input[name="user-req-type"][value="off"]').checked = true;
+  }
+
+  document.getElementById('user-req-modal').classList.remove('hidden');
 }
 
-document.getElementById('schedule-request-form')?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  if (!currentUser.empId) await syncEmployeeRecord();
+function closeUserReqModal() {
+  document.getElementById('user-req-modal').classList.add('hidden');
+  userReqDate = null;
+}
 
+// 送出預約
+async function submitUserDayRequest() {
+  if (!userReqDate) return;
+
+  const selectedType = document.querySelector('input[name="user-req-type"]:checked')?.value || 'off';
+  const reason = document.getElementById('user-req-reason').value;
   const targetMonth = document.getElementById('req-target-month').value;
-  const reqDate = document.getElementById('req-date').value;
-  const reqType = document.getElementById('req-type').value;
-  const reason = document.getElementById('req-reason').value;
-
-  const dateObj = new Date(reqDate);
-  const dayOfWeek = dateObj.getDay();
-
-  if (dayOfWeek === 0) {
-    alert('⚠️ 愛欣診所每週日固定休診，無須預約！');
-    return;
-  }
+  const dayOfWeek = new Date(userReqDate).getDay();
 
   const isNurse = isDialysisNurse(currentUser.displayName, currentUser.role);
 
-  // 僅針對透析護理師實施「一三五限休 2 次」及「全院一三五上限 2 人」限制
-  if (reqType === 'off' && isNurse) {
+  if (selectedType === 'off' && isNurse) {
     if (dayOfWeek === 1 || dayOfWeek === 3 || dayOfWeek === 5) {
       const { data: myReqs } = await supabaseClient.from('clinic_schedule_requests')
         .select('*')
@@ -238,23 +306,11 @@ document.getElementById('schedule-request-form')?.addEventListener('submit', asy
 
       const mwfCount = (myReqs || []).filter(r => {
         const d = new Date(r.request_date).getDay();
-        return (d === 1 || d === 3 || d === 5) && r.request_date !== reqDate;
+        return (d === 1 || d === 3 || d === 5) && r.request_date !== userReqDate;
       }).length;
 
       if (mwfCount >= 2 && currentUser.displayName !== '陳慧倪') {
         alert('🚨 預約上限：每位透析護理師每月「星期一、三、五」最多僅能預約 2 次休假！');
-        return;
-      }
-
-      const { data: allDateReqs } = await supabaseClient.from('clinic_schedule_requests')
-        .select('*, clinic_employees(name, role)')
-        .eq('request_date', reqDate)
-        .eq('request_type', 'off');
-
-      const nurseOffCount = (allDateReqs || []).filter(r => isDialysisNurse(r.clinic_employees?.name || '', r.clinic_employees?.role || '')).length;
-
-      if (nurseOffCount >= 2) {
-        alert(`🚨 人力限制：${reqDate} 已有 2 位透析護理師預約休假，為維持臨床透析人力，請選擇其他日期！`);
         return;
       }
     }
@@ -263,67 +319,30 @@ document.getElementById('schedule-request-form')?.addEventListener('submit', asy
   const { error } = await supabaseClient.from('clinic_schedule_requests').upsert([{
     target_month: targetMonth,
     employee_id: currentUser.empId,
-    request_date: reqDate,
-    request_type: reqType,
-    shift_id: reqType === 'off' ? 'off' : (document.getElementById('req-shift-select')?.value || 'morning'),
+    request_date: userReqDate,
+    request_type: selectedType === 'off' ? 'off' : 'shift',
+    shift_id: selectedType === 'off' ? 'off' : selectedType,
     reason: isFixedStaff(currentUser.displayName) ? `特休 (${reason || '個人事由'})` : reason,
     status: 'pending'
   }], { onConflict: 'employee_id,request_date' });
 
-  if (error) {
-    alert('登記失敗：' + error.message);
-  } else {
-    alert('✅ 排班/特休登記成功！');
-    document.getElementById('req-reason').value = '';
-    loadMyRequests();
-  }
-});
-
-async function loadMyRequests() {
-  if (!currentUser.empId) return;
-  const targetMonth = document.getElementById('req-target-month')?.value;
-  if (!targetMonth) return;
-  const { data } = await supabaseClient.from('clinic_schedule_requests')
-    .select('*')
-    .eq('employee_id', currentUser.empId)
-    .eq('target_month', targetMonth)
-    .order('request_date', { ascending: true });
-
-  const container = document.getElementById('my-request-list');
-  if (!container) return;
-  if (!data || data.length === 0) {
-    container.innerHTML = '<p class="text-slate-400 text-center py-3">尚無登錄的預約/特休需求</p>';
-    return;
-  }
-
-  container.innerHTML = '';
-  data.forEach(r => {
-    const shiftText = r.request_type === 'off' ? '🏖️ 預約特休' : `⭐ 希望班別: ${r.shift_id === 'afternoon' ? '中班' : '早班'}`;
-    const div = document.createElement('div');
-    div.className = "flex justify-between items-center bg-white p-2 rounded-lg border border-slate-200";
-    div.innerHTML = `
-      <div>
-        <span class="font-bold text-slate-800">${r.request_date}</span>
-        <span class="text-[11px] text-slate-500 ml-1">(${shiftText})</span>
-        ${r.reason ? `<p class="text-[10px] text-slate-400">備註: ${r.reason}</p>` : ''}
-      </div>
-      <button onclick="deleteRequest('${r.id}')" class="text-rose-500 font-bold text-xs p-1">✕</button>
-    `;
-    container.appendChild(div);
-  });
+  if (error) alert('儲存失敗：' + error.message);
+  closeUserReqModal();
+  loadRequestCalendar();
 }
 
-async function deleteRequest(id) {
-  if (!confirm('確定取消此筆登記嗎？')) return;
-  await supabaseClient.from('clinic_schedule_requests').delete().eq('id', id);
-  loadMyRequests();
+// 刪除/取消預約
+async function deleteCurrentDayRequest() {
+  if (!userReqDate) return;
+  await supabaseClient.from('clinic_schedule_requests').delete().eq('employee_id', currentUser.empId).eq('request_date', userReqDate);
+  closeUserReqModal();
+  loadRequestCalendar();
 }
 
-// ==================== 護理長月曆視覺化排班面板 ====================
+// ==================== 3. 護理長月曆視覺化排班 ====================
 async function initScheduleAdmin() {
   const { data: empData } = await supabaseClient.from('clinic_employees').select('*').eq('is_active', true);
   
-  // 嚴格人名去重過濾
   const seen = new Set();
   cachedEmployees = (empData || []).filter(e => {
     if (!e.name || seen.has(e.name.trim())) return false;
@@ -331,12 +350,10 @@ async function initScheduleAdmin() {
     return true;
   });
 
-  // 渲染名冊標籤 (分類清楚顯示)
   const codeTagsContainer = document.getElementById('nurse-code-tags');
   if (codeTagsContainer) {
     codeTagsContainer.innerHTML = '';
 
-    // 1. 醫師
     const docs = cachedEmployees.filter(e => isDoctor(e.name, e.role));
     docs.forEach(e => {
       const span = document.createElement('span');
@@ -345,7 +362,6 @@ async function initScheduleAdmin() {
       codeTagsContainer.appendChild(span);
     });
 
-    // 2. 透析輪班護理人員 (具備數字代碼 01, 02...)
     const dialysisNurses = cachedEmployees.filter(e => isDialysisNurse(e.name, e.role));
     dialysisNurses.forEach((e, idx) => {
       const code = String(idx + 1).padStart(2, '0');
@@ -356,7 +372,6 @@ async function initScheduleAdmin() {
       codeTagsContainer.appendChild(span);
     });
 
-    // 3. 固定班人員 (門診/工作人員/清潔)
     const fixedStaffs = cachedEmployees.filter(e => isFixedStaff(e.name));
     fixedStaffs.forEach(e => {
       const info = FIXED_STAFF_ROLES[e.name];
@@ -382,7 +397,6 @@ async function loadScheduleCalendar() {
   const startDateStr = `${monthStr}-01`;
   const endDateStr = `${monthStr}-${totalDays}`;
 
-  // 抓取當月排班與特休申請紀錄
   const [schRes, reqRes] = await Promise.all([
     supabaseClient.from('clinic_schedules').select('*, clinic_employees(*)').gte('date', startDateStr).lte('date', endDateStr),
     supabaseClient.from('clinic_schedule_requests').select('*, clinic_employees(*)').gte('request_date', startDateStr).lte('request_date', endDateStr).eq('request_type', 'off')
@@ -395,14 +409,12 @@ async function loadScheduleCalendar() {
   if (!grid) return;
   grid.innerHTML = '';
 
-  // 填補月初空白格
   for (let i = 0; i < startDayOfWeek; i++) {
     const emptyCell = document.createElement('div');
     emptyCell.className = "min-h-[75px] bg-slate-50/50 rounded-lg border border-dashed border-slate-200";
     grid.appendChild(emptyCell);
   }
 
-  // 填寫整月日曆格子
   for (let d = 1; d <= totalDays; d++) {
     const dayStr = `${monthStr}-${String(d).padStart(2, '0')}`;
     const dayOfWeek = new Date(y, m - 1, d).getDay();
@@ -421,11 +433,8 @@ async function loadScheduleCalendar() {
 
     let bodyHtml = `<div class="space-y-0.5 mt-1">`;
     if (dayOfWeek !== 0) {
-      // 透析護理師早班與中班代碼
       const morningList = daySchedules.filter(s => s.shift_id === 'morning' || (!s.clinic_shifts?.shift_name?.includes('中') && s.shift_id !== 'afternoon' && s.shift_id !== 'off'));
       const afternoonList = daySchedules.filter(s => s.shift_id === 'afternoon' || s.clinic_shifts?.shift_name?.includes('中'));
-      
-      // 特休名單 (包含固定班盧明伶、涂春娥、胡月霞與護理師)
       const offNames = dayOffReqs.map(r => r.clinic_employees?.name).filter(Boolean);
 
       if (morningList.length > 0) {
@@ -450,7 +459,6 @@ async function loadScheduleCalendar() {
   }
 }
 
-// 點擊開啟排班填空彈窗 (僅展示透析護理師供指派，並標明當日特休名單)
 function openShiftEditModal(dateStr, dayOfWeek) {
   if (dayOfWeek === 0) {
     if (!confirm(`${dateStr} 為週日固定休診日，確定要為此日指派特別出勤嗎？`)) return;
@@ -473,10 +481,8 @@ function openShiftEditModal(dateStr, dayOfWeek) {
   const currentMorningEmpIds = daySchedules.filter(s => s.shift_id === 'morning' || (!s.clinic_shifts?.shift_name?.includes('中') && s.shift_id !== 'afternoon' && s.shift_id !== 'off')).map(s => s.employee_id);
   const currentAfternoonEmpIds = daySchedules.filter(s => s.shift_id === 'afternoon' || s.clinic_shifts?.shift_name?.includes('中')).map(s => s.employee_id);
 
-  // 僅載入透析輪班護理人員 (排除醫師與固定班人員)
   const dialysisNurses = cachedEmployees.filter(e => isDialysisNurse(e.name, e.role));
 
-  // 早班透析護理師勾選格
   const morningContainer = document.getElementById('morning-nurses-select');
   morningContainer.innerHTML = '';
   dialysisNurses.forEach(emp => {
@@ -488,7 +494,6 @@ function openShiftEditModal(dateStr, dayOfWeek) {
     morningContainer.appendChild(label);
   });
 
-  // 中班透析護理師勾選格
   const afternoonContainer = document.getElementById('afternoon-nurses-select');
   afternoonContainer.innerHTML = '';
   dialysisNurses.forEach(emp => {
@@ -508,14 +513,12 @@ function closeShiftEditModal() {
   editingDate = null;
 }
 
-// 儲存當天指派排班
 async function saveModalDaySchedule() {
   if (!editingDate) return;
 
   const morningChecked = Array.from(document.querySelectorAll('input[name="modal-morning-emp"]:checked')).map(cb => cb.value);
   const afternoonChecked = Array.from(document.querySelectorAll('input[name="modal-afternoon-emp"]:checked')).map(cb => cb.value);
 
-  // 清除當日透析護理師舊排班
   const dialysisNurseIds = cachedEmployees.filter(e => isDialysisNurse(e.name, e.role)).map(e => e.id);
   await supabaseClient.from('clinic_schedules').delete().eq('date', editingDate).in('employee_id', dialysisNurseIds);
 
@@ -536,11 +539,10 @@ async function saveModalDaySchedule() {
   loadScheduleCalendar();
 }
 
-// ==================== 國定假日 9 大節日抽籤 ====================
+// 國定假日抽籤
 async function runNationalHolidayLottery() {
   if (!confirm('確定由「透析輪班護理師」進行全年度 9 大國定假日抽籤輪休？（每人均休過一次後才重啟下一輪）')) return;
 
-  // 僅限一般透析護理師（嚴格排除醫師、護理長與盧明伶、涂春娥、胡月霞）
   const regularNurses = cachedEmployees.filter(e => isDialysisNurse(e.name, e.role) && e.name !== '陳慧倪');
 
   if (!regularNurses || regularNurses.length === 0) {
@@ -564,9 +566,6 @@ async function runNationalHolidayLottery() {
   });
 
   const { error } = await supabaseClient.from('clinic_holiday_lottery').upsert(assignments);
-  if (error) {
-    alert('抽籤儲存失敗：' + error.message);
-  } else {
-    alert('🎉 2026 年度 9 大國定假日抽籤排定完成！');
-  }
+  if (error) alert('抽籤儲存失敗：' + error.message);
+  else alert('🎉 2026 年度 9 大國定假日抽籤排定完成！');
 }
