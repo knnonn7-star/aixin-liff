@@ -1,4 +1,4 @@
-// ==================== 愛欣診所 人事排班與特休管理模組 (hr.js) ====================
+// ==================== 愛欣診所 人事排班與特休管理模組 (hr.js) - 第一段 ====================
 let cachedEmployees = [];
 let cachedMonthSchedules = [];
 let cachedMonthRequests = [];
@@ -489,7 +489,7 @@ async function deleteCurrentDayRequest() {
   loadRequestCalendar();
 }
 
-// ==================== 3. 護理長排班中心 ====================
+// ==================== 3. 護理長排班中心 (含輪班間隔防呆) ====================
 async function initScheduleAdmin() {
   const { data: empData } = await supabaseClient.from('clinic_employees').select('*');
   
@@ -662,6 +662,10 @@ function openShiftEditModal(dateStr, dayOfWeek, holiday, holidayWinner, dayReque
   editingDate = dateStr;
   document.getElementById('modal-date-title').innerText = `📅 ${dateStr} ${holiday ? `(🎌${holiday.name})` : ''} 排班`;
 
+  const currentDateObj = new Date(dateStr);
+  const prevDateObj = new Date(currentDateObj.getTime() - 86400000);
+  const prevDateStr = prevDateObj.toISOString().split('T')[0];
+
   let priorityHints = [];
   if (holidayWinner) {
     const wCode = getEmpCode(holidayWinner.winner_emp_id);
@@ -684,13 +688,17 @@ function openShiftEditModal(dateStr, dayOfWeek, holiday, holidayWinner, dayReque
     const existing = daySchedules.find(s => s.employee_id === emp.id);
     const code = getEmpCode(emp);
 
+    const prevDaySchedule = cachedMonthSchedules.find(s => s.employee_id === emp.id && s.date === prevDateStr);
+    const hadNightShiftYesterday = prevDaySchedule && prevDaySchedule.shift_name && prevDaySchedule.shift_name.includes('晚');
+
     const row = document.createElement('div');
     row.className = "flex items-center justify-between gap-1 p-1.5 rounded-lg border border-slate-200 bg-slate-50";
 
     let shiftOptionsHtml = '';
     SHIFT_TYPES.forEach(st => {
       const selected = (existing && existing.shift_name === st) ? 'selected' : (!existing && st === '未排班' ? 'selected' : '');
-      shiftOptionsHtml += `<option value="${st}" ${selected}>${st}</option>`;
+      const warningTag = (hadNightShiftYesterday && st === '開門白班') ? ' ⚠️間隔<11h' : '';
+      shiftOptionsHtml += `<option value="${st}" ${selected}>${st}${warningTag}</option>`;
     });
 
     let hoursOptionsHtml = '';
@@ -700,7 +708,7 @@ function openShiftEditModal(dateStr, dayOfWeek, holiday, holidayWinner, dayReque
     });
 
     row.innerHTML = `
-      <span class="font-bold text-slate-800 w-28 truncate">[${code}] ${emp.name}</span>
+      <span class="font-bold text-slate-800 w-28 truncate ${hadNightShiftYesterday ? 'text-amber-800' : ''}">[${code}] ${emp.name}</span>
       <div class="flex items-center gap-1">
         <select data-emp-id="${emp.id}" class="nurse-shift-type-select border rounded p-1 bg-white font-bold text-xs">
           ${shiftOptionsHtml}
@@ -787,7 +795,7 @@ async function runNationalHolidayLottery() {
   loadScheduleCalendar();
 }
 
-// ==================== 4. A4 橫向「月曆形式」排版與列印預覽引擎 ====================
+// ==================== 4. A4 橫向「緊湊雙欄月曆」排版與列印預覽引擎 ====================
 function buildA4CalendarHtml(monthStr) {
   const [y, m] = monthStr.split('-').map(Number);
   const firstDayObj = new Date(y, m - 1, 1);
@@ -798,7 +806,7 @@ function buildA4CalendarHtml(monthStr) {
   let theadHtml = '<tr>';
   weekDays.forEach((wd, idx) => {
     const isSun = idx === 0;
-    theadHtml += `<th style="border: 1px solid #000; padding: 4px; font-size: 11px; background: ${isSun ? '#fee2e2' : '#f1f5f9'}; color: ${isSun ? '#b91c1c' : '#0f172a'}; width: 14.28%; text-align: center;">${wd}</th>`;
+    theadHtml += `<th style="border: 1px solid #000; padding: 3px; font-size: 10.5px; background: ${isSun ? '#fee2e2' : '#f1f5f9'}; color: ${isSun ? '#b91c1c' : '#0f172a'}; width: 14.28%; text-align: center;">${wd}</th>`;
   });
   theadHtml += '</tr>';
 
@@ -807,7 +815,7 @@ function buildA4CalendarHtml(monthStr) {
   let cellCount = 0;
 
   for (let i = 0; i < startDayOfWeek; i++) {
-    tbodyHtml += `<td style="border: 1px solid #000; background: #fafafa; min-height: 82px;"></td>`;
+    tbodyHtml += `<td style="border: 1px solid #000; background: #fafafa;"></td>`;
     cellCount++;
   }
 
@@ -826,20 +834,20 @@ function buildA4CalendarHtml(monthStr) {
     const isSun = dayOfWeek === 0;
     const bgStyle = holiday ? 'background: #fff1f2;' : (isSun ? 'background: #f8fafc;' : 'background: #ffffff;');
 
-    let cellContent = `<div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dotted #94a3b8; padding-bottom: 2px; margin-bottom: 3px;">`;
-    cellContent += `<span style="font-weight: 900; font-size: 12px; color: ${isSun || holiday ? '#dc2626' : '#0f172a'};">${dayCounter}</span>`;
+    let cellContent = `<div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dotted #94a3b8; padding-bottom: 1px; margin-bottom: 2px;">`;
+    cellContent += `<span style="font-weight: 900; font-size: 11px; color: ${isSun || holiday ? '#dc2626' : '#0f172a'};">${dayCounter}</span>`;
     if (holiday) {
-      cellContent += `<span style="font-size: 8px; font-weight: bold; background: #e11d48; color: #fff; padding: 0.5px 3px; border-radius: 3px;">${holiday.name}</span>`;
+      cellContent += `<span style="font-size: 7.5px; font-weight: bold; background: #e11d48; color: #fff; padding: 0.5px 2.5px; border-radius: 2px;">${holiday.name}</span>`;
     } else if (isSun) {
-      cellContent += `<span style="font-size: 8px; color: #64748b;">休診</span>`;
+      cellContent += `<span style="font-size: 7.5px; color: #64748b;">休診</span>`;
     }
     cellContent += `</div>`;
 
-    cellContent += `<div style="font-size: 9px; line-height: 1.25; min-height: 52px; font-family: monospace;">`;
+    cellContent += `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1px 2px; font-size: 8px; line-height: 1.15; font-family: monospace; min-height: 48px;">`;
 
     if (holidayWon) {
-      const code = getEmpCode(holidayWinner.winner_emp_id);
-      cellContent += `<div style="color: #7e22ce; font-weight: bold;">[國休] [${code}]</div>`;
+      const code = getEmpCode(holidayWon.winner_emp_id);
+      cellContent += `<div style="grid-column: span 2; color: #7e22ce; font-weight: bold;">[國休] [${code}]</div>`;
     }
 
     if (daySchedules.length > 0) {
@@ -847,19 +855,19 @@ function buildA4CalendarHtml(monthStr) {
         const code = getEmpCode(s.employee_id);
         const shortShift = s.shift_name.replace('班', '').replace('正常', '');
         const shiftColor = s.shift_name.includes('開門') ? '#b45309' : (s.shift_name.includes('晚') ? '#4338ca' : '#0369a1');
-        cellContent += `<div style="color: ${shiftColor}; font-weight: bold;">[${code}] ${shortShift} ${s.hours}h</div>`;
+        cellContent += `<div style="color: ${shiftColor}; font-weight: bold; white-space: nowrap;">[${code}]${shortShift}${s.hours}h</div>`;
       });
     }
 
     if (dayOffReqs.length > 0) {
-      const offCodes = dayOffReqs.map(r => `[${getEmpCode(r.employee_id)}]`).join(',');
-      cellContent += `<div style="color: #be123c;">[排休] ${offCodes}</div>`;
+      const offCodes = dayOffReqs.map(r => `[${getEmpCode(r.employee_id)}]`).join('');
+      cellContent += `<div style="grid-column: span 2; color: #be123c; font-weight: bold;">[排休] ${offCodes}</div>`;
     }
 
-    cellContent += `<div style="height: 14px; margin-top: 2px; border-top: 1px dashed #e2e8f0;"></div>`;
     cellContent += `</div>`;
+    cellContent += `<div style="height: 10px; margin-top: 1px; border-top: 1px dashed #cbd5e1;"></div>`;
 
-    tbodyHtml += `<td style="border: 1px solid #000; padding: 3px; vertical-align: top; width: 14.28%; ${bgStyle}">${cellContent}</td>`;
+    tbodyHtml += `<td style="border: 1px solid #000; padding: 2px; vertical-align: top; width: 14.28%; ${bgStyle}">${cellContent}</td>`;
 
     dayCounter++;
     cellCount++;
@@ -873,12 +881,12 @@ function buildA4CalendarHtml(monthStr) {
 
   return `
     <div style="font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; color: black; width: 100%; max-width: 1000px; margin: 0 auto;">
-      <div style="display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid black; padding-bottom: 3px; margin-bottom: 4px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid black; padding-bottom: 2px; margin-bottom: 3px;">
         <div>
-          <h2 style="font-size: 16px; font-weight: 900; margin: 0; letter-spacing: 1px;">🏥 愛欣診所透析中心 - 護理人員出勤班表</h2>
-          <span style="font-size: 11px; font-weight: bold; color: #334155;">排班月份：${monthStr} ｜ 護理長：陳慧倪</span>
+          <h2 style="font-size: 15px; font-weight: 900; margin: 0; letter-spacing: 0.5px;">🏥 愛欣診所透析中心 - 護理人員出勤班表</h2>
+          <span style="font-size: 10.5px; font-weight: bold; color: #334155;">排班月份：${monthStr} ｜ 護理長：陳慧倪</span>
         </div>
-        <div style="font-size: 9.5px; color: #334155; text-align: right; line-height: 1.2;">
+        <div style="font-size: 8.5px; color: #334155; text-align: right; line-height: 1.15;">
           班別：開白(開門白班)、白(正常白班)、晚(正常晚班)<br>
           產表日期：${new Date().toLocaleDateString('zh-TW')}
         </div>
@@ -889,7 +897,7 @@ function buildA4CalendarHtml(monthStr) {
         <tbody>${tbodyHtml}</tbody>
       </table>
 
-      <div style="display: flex; justify-content: space-between; font-size: 10.5px; margin-top: 8px; font-weight: bold; padding-top: 4px;">
+      <div style="display: flex; justify-content: space-between; font-size: 10px; margin-top: 6px; font-weight: bold; padding-top: 2px;">
         <span>護理長簽核：陳慧倪 ____________________</span>
         <span>院長 / 醫師簽核：林和正 ____________________</span>
         <span>備註 / 異動紀錄：____________________</span>
@@ -929,8 +937,8 @@ function openInExternalBrowser() {
       <head>
         <title>愛欣診所出勤月曆_${monthStr}</title>
         <style>
-          @page { size: A4 landscape; margin: 5mm; }
-          body { margin: 0; padding: 4px; background: white; font-family: -apple-system, sans-serif; }
+          @page { size: A4 landscape; margin: 4mm; }
+          body { margin: 0; padding: 2px; background: white; font-family: -apple-system, sans-serif; }
         </style>
       </head>
       <body>
