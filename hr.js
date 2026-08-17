@@ -1,8 +1,9 @@
-// ==================== 人事排班模組 ====================
+// ==================== 愛欣診所 人事與排班模組 (hr.js) ====================
 let cachedEmployees = [];
 let cachedShifts = [];
 let cachedAllSchedules = [];
 
+// 9 大國定假日抽籤清單
 const NATIONAL_HOLIDAYS_2026 = [
   { name: '元旦', date: '2026-01-01' },
   { name: '228紀念日', date: '2026-02-28' },
@@ -15,9 +16,13 @@ const NATIONAL_HOLIDAYS_2026 = [
   { name: '行憲紀念日', date: '2026-12-25' }
 ];
 
+// ==================== 頁籤切換與權限管制 ====================
 function switchHrTab(tab) {
-  if (tab === 'scheduling' && currentUser.displayName !== '陳慧倪' && currentUser.displayName !== '林和正') {
-    alert('🔒 權限受限：全院排班發布與管理由護理長（陳慧倪）統一負責。');
+  // 管理權限：僅陳慧倪（護理長）與林和正（醫師）可操作全院排班整合
+  const isAdminUser = (currentUser.displayName === '陳慧倪' || currentUser.displayName === '林和正' || currentUser.role === 'doctor');
+  
+  if (tab === 'scheduling' && !isAdminUser) {
+    alert('🔒 權限提示：排班總表之編排與發布僅限護理長（陳慧倪）與醫師操作。');
     return;
   }
 
@@ -40,6 +45,7 @@ function initHrDefaults() {
   if (schDate) schDate.value = today.toISOString().split('T')[0];
 }
 
+// ==================== 查詢個人班表 ====================
 async function loadMySchedule() {
   if (!currentUser.empId) return;
   const today = new Date();
@@ -59,7 +65,7 @@ async function loadMySchedule() {
 
   container.innerHTML = '';
   data.forEach(s => {
-    const shift = s.clinic_shifts || { shift_name: '常規班', start_time: '08:00', end_time: '17:00' };
+    const shift = s.clinic_shifts || { shift_name: '常規班', start_time: '08:00', end_time: '16:00' };
     const row = document.createElement('div');
     row.className = "flex justify-between items-center bg-white p-2.5 rounded-lg border border-slate-200 text-xs";
     row.innerHTML = `
@@ -70,6 +76,7 @@ async function loadMySchedule() {
   });
 }
 
+// ==================== 每月 15 號預約排班 ====================
 async function initRequestPage() {
   const today = new Date();
   const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
@@ -81,26 +88,26 @@ async function initRequestPage() {
   const currentDay = today.getDate();
   const deadlineTag = document.getElementById('request-deadline-tag');
   const submitBtn = document.getElementById('btn-submit-request');
-  const isHeadNurse = (currentUser.displayName === '陳慧倪' || currentUser.displayName === '林和正');
+  const isAdminUser = (currentUser.displayName === '陳慧倪' || currentUser.displayName === '林和正' || currentUser.role === 'doctor');
 
-  if (currentDay > 15 && !isHeadNurse) {
+  if (currentDay > 15 && !isAdminUser) {
     if (deadlineTag) {
-      deadlineTag.innerText = "⚠️ 預約已於 15 號截止 (轉交護理長整合中)";
+      deadlineTag.innerText = "⚠️ 護理師預約已於 15 號截止 (護理長排班整合中)";
       deadlineTag.className = "bg-rose-100 text-rose-800 text-[10px] px-2 py-0.5 rounded font-bold";
     }
     if (submitBtn) {
       submitBtn.disabled = true;
-      submitBtn.innerText = "🔒 預約已於 15 號截止 (月底前由護理長公布)";
+      submitBtn.innerText = "🔒 預約已截止 (月底前公布班表)";
       submitBtn.className = "w-full bg-slate-400 text-white font-bold py-2.5 rounded-xl text-xs cursor-not-allowed";
     }
   } else {
     if (deadlineTag) {
-      deadlineTag.innerText = currentDay <= 15 ? `距離 15 號截止還剩 ${15 - currentDay} 天` : `護理長特別編輯模式`;
+      deadlineTag.innerText = currentDay <= 15 ? `距離 15 號截止還剩 ${15 - currentDay} 天` : `管理職特別編輯模式`;
       deadlineTag.className = "bg-indigo-200 text-indigo-800 text-[10px] px-2 py-0.5 rounded font-bold";
     }
     if (submitBtn) {
       submitBtn.disabled = false;
-      submitBtn.innerText = "📤 送出排班需求";
+      submitBtn.innerText = "📤 送出排班/休假預約";
       submitBtn.className = "w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl shadow-sm text-xs transition";
     }
   }
@@ -141,13 +148,15 @@ function toggleRequestShiftSelect() {
   }
 }
 
+// 預約提交與規則校驗引擎
 document.getElementById('schedule-request-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!currentUser.empId) await syncEmployeeRecord();
 
+  // 盧明伶不參與常規排班
   if (currentUser.displayName === '盧明伶') {
-    const isSpecialOff = confirm('盧明伶護理師固定支援門診藥事與週六加班。\n是否確定登記為個人特休？');
-    if (!isSpecialOff) return;
+    const isSpecial = confirm('盧明伶護理師固定負責門診藥事與週六加班。\n確認登記此項目為個人特休嗎？');
+    if (!isSpecial) return;
   }
 
   const targetMonth = document.getElementById('req-target-month').value;
@@ -159,26 +168,30 @@ document.getElementById('schedule-request-form')?.addEventListener('submit', asy
   const dateObj = new Date(reqDate);
   const dayOfWeek = dateObj.getDay();
 
+  // 基礎營運規則：週日固定休診
   if (dayOfWeek === 0) {
-    alert('⚠️ 愛欣診所每週日固定休診，無需登記休假！');
+    alert('⚠️ 愛欣診所每週日固定休診，無須預約休假！');
     return;
   }
 
-  if (reqType === 'off') {
-    const { data: myReqs } = await supabaseClient.from('clinic_schedule_requests')
-      .select('*')
-      .eq('employee_id', currentUser.empId)
-      .eq('target_month', targetMonth)
-      .eq('request_type', 'off');
+  // 護理師排休管制（醫師林和正與護理長陳慧倪不受此限）
+  const isRegularNurse = (currentUser.displayName !== '林和正' && currentUser.displayName !== '陳慧倪' && currentUser.displayName !== '盧明伶' && currentUser.role !== 'doctor');
 
+  if (reqType === 'off' && isRegularNurse) {
     if (dayOfWeek === 1 || dayOfWeek === 3 || dayOfWeek === 5) {
+      const { data: myReqs } = await supabaseClient.from('clinic_schedule_requests')
+        .select('*')
+        .eq('employee_id', currentUser.empId)
+        .eq('target_month', targetMonth)
+        .eq('request_type', 'off');
+
       const mwfCount = (myReqs || []).filter(r => {
         const d = new Date(r.request_date).getDay();
         return (d === 1 || d === 3 || d === 5) && r.request_date !== reqDate;
       }).length;
 
-      if (mwfCount >= 2 && currentUser.displayName !== '陳慧倪') {
-        alert('🚨 預約超額：每位護理師每月「星期一、三、五」最多僅能預約 2 次休假！');
+      if (mwfCount >= 2) {
+        alert('🚨 預約上限：每位護理師每月「星期一、三、五」最多僅能預約 2 次休假！');
         return;
       }
 
@@ -188,7 +201,7 @@ document.getElementById('schedule-request-form')?.addEventListener('submit', asy
         .eq('request_type', 'off');
 
       if (allDateReqs && allDateReqs.length >= 2) {
-        alert(`🚨 額滿警示：${reqDate} (週${dayOfWeek===1?'一':(dayOfWeek===3?'三':'五')}) 已有 2 位同仁預約休假，請選擇其他日期！`);
+        alert(`🚨 人力限制：${reqDate} 已有 2 位同仁預約休假，為維持臨床人力，請選擇其他日期！`);
         return;
       }
     }
@@ -205,9 +218,9 @@ document.getElementById('schedule-request-form')?.addEventListener('submit', asy
   }], { onConflict: 'employee_id,request_date' });
 
   if (error) {
-    alert('送出失敗：' + error.message);
+    alert('登記失敗：' + error.message);
   } else {
-    alert('✅ 排班需求登記成功！護理長將於月底前整合並發布班表。');
+    alert('✅ 排班/休假需求已登記！');
     document.getElementById('req-reason').value = '';
     loadMyRequests();
   }
@@ -232,7 +245,7 @@ async function loadMyRequests() {
 
   container.innerHTML = '';
   data.forEach(r => {
-    const shiftText = r.request_type === 'off' ? '🏖️ 預約休假' : `⭐ 希望班別: ${r.clinic_shifts?.shift_name || ''}`;
+    const shiftText = r.request_type === 'off' ? '🏖️ 預約休假' : `⭐ 希望班別: ${r.clinic_shifts?.shift_name || '上班'}`;
     const div = document.createElement('div');
     div.className = "flex justify-between items-center bg-white p-2 rounded-lg border border-slate-200";
     div.innerHTML = `
@@ -248,18 +261,21 @@ async function loadMyRequests() {
 }
 
 async function deleteRequest(id) {
-  if (!confirm('確定取消此預約排班嗎？')) return;
+  if (!confirm('確定取消此筆預約嗎？')) return;
   await supabaseClient.from('clinic_schedule_requests').delete().eq('id', id);
   loadMyRequests();
 }
 
+// ==================== 國定假日 9 大節日抽籤演算法 (排除醫師與特殊職務) ====================
 async function runNationalHolidayLottery() {
-  if (!confirm('確定由一般護理師進行全年度 9 大國定假日公平抽籤輪休嗎？')) return;
+  if (!confirm('確定由「一般護理師」進行全年度 9 大國定假日抽籤輪休？（每人均休一次後才重啟下一輪）')) return;
 
+  // 嚴格排除：林和正醫師、陳慧倪護理長、盧明伶藥事
   const { data: regularNurses } = await supabaseClient.from('clinic_employees')
     .select('*')
     .eq('is_active', true)
-    .not('name', 'in', '("陳慧倪","盧明伶")');
+    .not('role', 'eq', 'doctor')
+    .not('name', 'in', '("林和正","陳慧倪","盧明伶")');
 
   if (!regularNurses || regularNurses.length === 0) {
     alert('查無符合輪抽資格的一般護理師！');
@@ -285,10 +301,11 @@ async function runNationalHolidayLottery() {
   if (error) {
     alert('抽籤儲存失敗：' + error.message);
   } else {
-    alert('🎉 2026 年度 9 大國定假日抽籤已完成並存檔！');
+    alert('🎉 2026 年度 9 大國定假日抽籤排定完成！');
   }
 }
 
+// ==================== 護理長排班管理與合規檢查 ====================
 async function loadScheduleAdminData() {
   const { data: empData } = await supabaseClient.from('clinic_employees').select('*').eq('is_active', true);
   cachedEmployees = empData || [];
@@ -300,9 +317,15 @@ async function loadScheduleAdminData() {
   if (empSelect) {
     empSelect.innerHTML = '';
     cachedEmployees.forEach(e => {
+      let roleLabel = '護理師';
+      if (e.name === '林和正' || e.role === 'doctor') roleLabel = '醫師';
+      else if (e.name === '陳慧倪') roleLabel = '護理長';
+      else if (e.name === '盧明伶') roleLabel = '門診藥事';
+
+      const deductionText = (e.sat_off_deduction > 0 && roleLabel === '護理師') ? ` (遲到扣休週六 ${e.sat_off_deduction}次)` : '';
       const opt = document.createElement('option');
       opt.value = e.id;
-      opt.innerText = `${e.name} (${e.name === '陳慧倪' ? '護理長' : (e.name === '盧明伶' ? '門診藥事' : '護理師')})`;
+      opt.innerText = `${e.name} (${roleLabel})${deductionText}`;
       empSelect.appendChild(opt);
     });
   }
@@ -370,9 +393,29 @@ function checkShiftCompliance() {
   if (!dateStr || !empId || !shiftId) return;
 
   const targetShift = cachedShifts.find(s => s.id === shiftId);
+  const targetEmp = cachedEmployees.find(e => e.id === empId);
   const empSchedules = cachedAllSchedules.filter(s => s.employee_id === empId);
 
   const curDate = new Date(dateStr);
+  const dayOfWeek = curDate.getDay();
+
+  // 護理長陳慧倪固定休週末提醒
+  if (targetEmp?.name === '陳慧倪' && (dayOfWeek === 0 || dayOfWeek === 6)) {
+    if (warningDiv) {
+      warningDiv.innerText = `⚠️ 提醒：護理長陳慧倪原則固定休週末（週六/週日）。`;
+      warningDiv.classList.remove('hidden');
+    }
+  }
+
+  // 週二僅有早班提示
+  if (dayOfWeek === 2 && targetShift?.shift_name?.includes('中班')) {
+    if (warningDiv) {
+      warningDiv.innerText = `⚠️ 提醒：愛欣診所週二僅有早班，請確認中班排定之必要性。`;
+      warningDiv.classList.remove('hidden');
+    }
+  }
+
+  // 四週變形工時：不得連續工作超過 6 日
   let consecutiveDays = 0;
   for (let i = 1; i <= 6; i++) {
     const prevDate = new Date(curDate);
@@ -387,7 +430,7 @@ function checkShiftCompliance() {
 
   if (consecutiveDays >= 6) {
     if (warningDiv) {
-      warningDiv.innerText = `🚨 違規警告：該同仁已連續出勤 ${consecutiveDays} 日！依勞基法四週變形工時不得連續工作超過 6 日。`;
+      warningDiv.innerText = `🚨 違規警告：該同仁已連續出勤 ${consecutiveDays} 日！依四週變形工時不得連續工作超過 6 日。`;
       warningDiv.classList.remove('hidden');
     }
     if (saveBtn) {
@@ -397,6 +440,7 @@ function checkShiftCompliance() {
     return;
   }
 
+  // 班別間隔檢核
   const prevDay = new Date(curDate);
   prevDay.setDate(prevDay.getDate() - 1);
   const prevDayStr = prevDay.toISOString().split('T')[0];
@@ -453,7 +497,7 @@ async function saveSchedule() {
   if (error) {
     alert('儲存失敗：' + error.message);
   } else {
-    alert('✅ 排班成功儲存！已符合四週變形工時規範。');
+    alert('✅ 排班成功儲存！');
     loadScheduleAdminData();
   }
 }
