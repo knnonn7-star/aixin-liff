@@ -4,9 +4,9 @@ const SUPABASE_ANON_KEY = 'sb_publishable_fPdr9TBzrw9Ycb6GEpF7UA_zeLqblfo';
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const CLINIC_LOCATION = {
-  lat: 22.6273,      
-  lng: 120.3014,     
-  radiusMeters: 100  
+  lat: 22.6309209,
+  lng: 120.3392031,
+  radiusMeters: 300
 };
 
 let currentUser = { lineUserId: '', displayName: '匿名同仁', empId: null };
