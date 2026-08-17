@@ -1,4 +1,4 @@
-// ==================== 愛欣診所 人事與排班模組 (hr.js) ====================
+// ==================== 愛欣診所 人事排班與假期管理模組 (hr.js) ====================
 let cachedEmployees = [];
 let cachedMonthSchedules = [];
 let cachedMonthRequests = [];
@@ -19,7 +19,7 @@ const FIXED_STAFF_ROLES = {
   '胡月霞': { roleName: '清潔人員', tag: 'bg-cyan-100 text-cyan-900 border-cyan-300' }
 };
 
-// 9 大國定假日清單
+// 9 大國定假日清單 (共 9 日)
 const NATIONAL_HOLIDAYS_2026 = [
   { name: '元旦', date: '2026-01-01' },
   { name: '228紀念日', date: '2026-02-28' },
@@ -34,6 +34,39 @@ const NATIONAL_HOLIDAYS_2026 = [
 
 function getHolidayInfo(dateStr) {
   return NATIONAL_HOLIDAYS_2026.find(h => h.date === dateStr);
+}
+
+// ==================== 勞基法特休天數標準對照計算 ====================
+function calculateLaborSpecialLeaveDays(onboardingDateStr) {
+  // 若無設定到職日，以預設年資 (約 2 年) 提供 10 日特休
+  if (!onboardingDateStr) return { days: 10, seniorityText: '年資：約 2 年 (預設)' };
+
+  const onboard = new Date(onboardingDateStr);
+  const now = new Date('2026-08-17');
+  const totalMonths = (now.getFullYear() - onboard.getFullYear()) * 12 + (now.getMonth() - onboard.getMonth());
+  const years = totalMonths / 12;
+
+  let days = 0;
+  if (years < 0.5) {
+    days = 0;
+  } else if (years < 1) {
+    days = 3; // 6個月以上未滿1年：3日
+  } else if (years < 2) {
+    days = 7; // 1年以上未滿2年：7日
+  } else if (years < 3) {
+    days = 10; // 2年以上未滿3年：10日
+  } else if (years < 5) {
+    days = 14; // 3年以上未滿5年：14日
+  } else if (years < 10) {
+    days = 15; // 5年以上未滿10年：15日
+  } else {
+    // 10年以上：每1年加給1日，加至30日為止
+    const extraYears = Math.floor(years - 10) + 1;
+    days = Math.min(30, 15 + extraYears);
+  }
+
+  const seniorityText = `到職：${onboardingDateStr} (年資 ${years.toFixed(1)} 年)`;
+  return { days, seniorityText };
 }
 
 // ==================== 頁籤切換與初始化 ====================
@@ -87,7 +120,7 @@ function getEmpCode(emp) {
   return idx >= 0 ? String(idx + 1).padStart(2, '0') : '護理';
 }
 
-// ==================== 1. 「我的班表」月曆視圖 (含工時累計) ====================
+// ==================== 1. 「我的班表」月曆與法定休假餘額結算 ====================
 async function loadMySchedule() {
   if (!currentUser.empId) await syncEmployeeRecord();
   initHrDefaults();
@@ -95,6 +128,7 @@ async function loadMySchedule() {
   const monthStr = document.getElementById('my-sch-month')?.value;
   if (!monthStr) return;
 
+  const yearStr = monthStr.substring(0, 4);
   const [y, m] = monthStr.split('-').map(Number);
   const firstDayObj = new Date(y, m - 1, 1);
   const totalDays = new Date(y, m, 0).getDate();
@@ -103,24 +137,64 @@ async function loadMySchedule() {
   const startDateStr = `${monthStr}-01`;
   const endDateStr = `${monthStr}-${totalDays}`;
 
-  const [schRes, lotteryRes] = await Promise.all([
+  // 抓取全年度個人出勤與抽籤紀錄以計算年休假餘額
+  const [empDataRes, yearSchRes, monthSchRes, yearLotteryRes] = await Promise.all([
+    supabaseClient.from('clinic_employees').select('*').eq('id', currentUser.empId).single(),
+    supabaseClient.from('clinic_schedules').select('*').eq('employee_id', currentUser.empId).gte('date', `${yearStr}-01-01`).lte('date', `${yearStr}-12-31`),
     supabaseClient.from('clinic_schedules').select('*').eq('employee_id', currentUser.empId).gte('date', startDateStr).lte('date', endDateStr),
-    supabaseClient.from('clinic_holiday_lottery').select('*').eq('winner_emp_id', currentUser.empId).gte('holiday_date', startDateStr).lte('holiday_date', endDateStr)
+    supabaseClient.from('clinic_holiday_lottery').select('*').eq('winner_emp_id', currentUser.empId).eq('year', parseInt(yearStr, 10))
   ]);
 
-  const mySchedules = schRes.data || [];
-  const myHolidays = lotteryRes.data || [];
+  const empDetail = empDataRes.data || {};
+  const yearSchedules = yearSchRes.data || [];
+  const monthSchedules = monthSchRes.data || [];
+  const yearLotteries = yearLotteryRes.data || [];
 
-  // 計算個人當月累計上班時數
-  let totalHours = 0;
-  mySchedules.forEach(s => {
-    if (s.hours && s.shift_name !== '未排班' && s.shift_name !== '休假' && s.shift_name !== '特休') {
-      totalHours += Number(s.hours) || 0;
+  // 1. 勞基法法定特休計算
+  const { days: totalSpecialLeave, seniorityText } = calculateLaborSpecialLeaveDays(empDetail.onboarding_date);
+  const usedSpecialLeave = yearSchedules.filter(s => s.shift_name?.includes('特休') || s.shift_name?.includes('年休')).length;
+  document.getElementById('my-seniority-text').innerText = seniorityText;
+  document.getElementById('stat-special-leave').innerText = `${usedSpecialLeave} / ${totalSpecialLeave}日`;
+
+  // 2. 國定假日 (法定 9 日)
+  const totalNational = 9;
+  const usedNational = yearLotteries.length;
+  document.getElementById('stat-national-leave').innerText = `${usedNational} / ${totalNational}日`;
+
+  // 3. 例休與休息日 (52 週 x 2 = 104 日)
+  const totalWeekend = 104;
+  // 統計已排休之週日與例假日
+  const usedWeekend = yearSchedules.filter(s => s.shift_name === '休假' || s.shift_name === '未排班').length;
+  document.getElementById('stat-weekend-leave').innerText = `${usedWeekend} / ${totalWeekend}日`;
+
+  // 4. 工時增減折算天數 (基準 8h/日，超時或減少累積)
+  let netHoursDiff = 0;
+  let monthWorkHours = 0;
+  yearSchedules.forEach(s => {
+    if (s.hours && s.shift_name !== '未排班' && s.shift_name !== '休假' && !s.shift_name?.includes('特休')) {
+      const h = Number(s.hours) || 0;
+      netHoursDiff += (h - 8.0);
     }
   });
-  const totalHoursElem = document.getElementById('my-total-hours');
-  if (totalHoursElem) totalHoursElem.innerText = `${totalHours} 小時`;
 
+  monthSchedules.forEach(s => {
+    if (s.hours && s.shift_name !== '未排班' && s.shift_name !== '休假' && !s.shift_name?.includes('特休')) {
+      monthWorkHours += Number(s.hours) || 0;
+    }
+  });
+
+  const hoursOffsetDays = (netHoursDiff / 8.0);
+  const offsetSign = hoursOffsetDays >= 0 ? '+' : '';
+  document.getElementById('stat-hours-offset-days').innerText = `${offsetSign}${hoursOffsetDays.toFixed(1)}日 (${netHoursDiff.toFixed(1)}h)`;
+  document.getElementById('my-total-hours').innerText = `${monthWorkHours} 小時`;
+
+  // 5. 總剩餘假期結算 = (特休剩餘) + (國定未休) + (例休剩餘) + (工時折算天數)
+  const remainingSpecial = Math.max(0, totalSpecialLeave - usedSpecialLeave);
+  const remainingNational = Math.max(0, totalNational - usedNational);
+  const remainingTotal = (remainingSpecial + remainingNational + hoursOffsetDays);
+  document.getElementById('my-remaining-total-days').innerText = `${remainingTotal.toFixed(1)} 天`;
+
+  // 渲染個人月曆網格
   const grid = document.getElementById('my-calendar-grid');
   if (!grid) return;
   grid.innerHTML = '';
@@ -134,9 +208,9 @@ async function loadMySchedule() {
   for (let d = 1; d <= totalDays; d++) {
     const dayStr = `${monthStr}-${String(d).padStart(2, '0')}`;
     const dayOfWeek = new Date(y, m - 1, d).getDay();
-    const sch = mySchedules.find(s => s.date === dayStr);
+    const sch = monthSchedules.find(s => s.date === dayStr);
     const holiday = getHolidayInfo(dayStr);
-    const wonHoliday = myHolidays.find(h => h.holiday_date === dayStr);
+    const wonHoliday = yearLotteries.find(h => h.holiday_date === dayStr);
 
     const cell = document.createElement('div');
     cell.className = `min-h-[65px] p-1 rounded-lg border flex flex-col justify-between text-xs ${
@@ -167,7 +241,7 @@ async function loadMySchedule() {
       statusHtml += `<span class="text-[10px] text-slate-300 block text-center">固定休</span>`;
     } else {
       if (isFixedStaff(currentUser.displayName)) {
-        statusHtml += `<span class="text-[10px] bg-emerald-50 text-emerald-800 px-1 py-0.5 rounded block text-center">常規出勤</span>`;
+        statusHtml += `<span class="text-[10px] bg-emerald-50 text-emerald-800 px-1 py-0.5 rounded block text-center">常規班</span>`;
       } else {
         statusHtml += `<span class="text-[10px] text-slate-300 block text-center">未排班</span>`;
       }
@@ -179,7 +253,7 @@ async function loadMySchedule() {
   }
 }
 
-// ==================== 2. 「預約排班」月曆視圖 (含優先級排序) ====================
+// ==================== 2. 「全員預約看板」共享月曆視圖 (即時同步全員) ====================
 async function initRequestPage() {
   if (!currentUser.empId) await syncEmployeeRecord();
   initHrDefaults();
@@ -218,11 +292,16 @@ async function loadRequestCalendar() {
   const startDateStr = `${monthStr}-01`;
   const endDateStr = `${monthStr}-${totalDays}`;
 
-  const { data: myRequests } = await supabaseClient.from('clinic_schedule_requests')
-    .select('*')
-    .eq('employee_id', currentUser.empId)
-    .gte('request_date', startDateStr)
-    .lte('request_date', endDateStr);
+  // 抓取當月「所有同仁」的預約排休與國定抽籤紀錄，實現完全共享與同步連動
+  const [empRes, allReqRes, lotteryRes] = await Promise.all([
+    supabaseClient.from('clinic_employees').select('*').eq('is_active', true),
+    supabaseClient.from('clinic_schedule_requests').select('*, clinic_employees(*)').gte('request_date', startDateStr).lte('request_date', endDateStr),
+    supabaseClient.from('clinic_holiday_lottery').select('*, clinic_employees(*)').gte('holiday_date', startDateStr).lte('holiday_date', endDateStr)
+  ]);
+
+  cachedEmployees = empRes.data || [];
+  const allRequests = allReqRes.data || [];
+  const monthLotteries = lotteryRes.data || [];
 
   const grid = document.getElementById('req-calendar-grid');
   if (!grid) return;
@@ -230,23 +309,25 @@ async function loadRequestCalendar() {
 
   for (let i = 0; i < startDayOfWeek; i++) {
     const empty = document.createElement('div');
-    empty.className = "min-h-[70px] bg-slate-50/50 rounded-lg border border-dashed border-slate-200";
+    empty.className = "min-h-[75px] bg-slate-50/50 rounded-lg border border-dashed border-slate-200";
     grid.appendChild(empty);
   }
 
   for (let d = 1; d <= totalDays; d++) {
     const dayStr = `${monthStr}-${String(d).padStart(2, '0')}`;
     const dayOfWeek = new Date(y, m - 1, d).getDay();
-    const req = (myRequests || []).find(r => r.request_date === dayStr);
+    const dayReqs = allRequests.filter(r => r.request_date === dayStr);
+    const myReq = dayReqs.find(r => r.employee_id === currentUser.empId);
     const holiday = getHolidayInfo(dayStr);
+    const holidayWinner = monthLotteries.find(l => l.holiday_date === dayStr);
 
     const cell = document.createElement('div');
-    cell.className = `min-h-[70px] p-1 rounded-lg border flex flex-col justify-between text-xs cursor-pointer transition hover:shadow-md ${
-      holiday ? 'bg-rose-50/60 border-rose-300' : (dayOfWeek === 0 ? 'bg-slate-50 border-slate-200 cursor-not-allowed' : (req ? 'bg-indigo-50/80 border-indigo-400' : 'bg-white border-slate-200 hover:border-indigo-400'))
+    cell.className = `min-h-[75px] p-1 rounded-lg border flex flex-col justify-between text-xs cursor-pointer transition hover:shadow-md ${
+      holiday ? 'bg-rose-50/60 border-rose-300' : (dayOfWeek === 0 ? 'bg-slate-50 border-slate-200 cursor-not-allowed' : (myReq ? 'bg-indigo-50/80 border-indigo-400 ring-1 ring-indigo-300' : 'bg-white border-slate-200 hover:border-indigo-400'))
     }`;
     
     if (dayOfWeek !== 0) {
-      cell.onclick = () => openUserReqModal(dayStr, dayOfWeek, req, holiday);
+      cell.onclick = () => openUserReqModal(dayStr, dayOfWeek, myReq, holiday);
     }
 
     let headerHtml = `<div class="flex justify-between items-center font-bold">`;
@@ -255,21 +336,31 @@ async function loadRequestCalendar() {
     else if (dayOfWeek === 0) headerHtml += `<span class="text-[9px] bg-slate-200 text-slate-700 px-1 rounded">休診</span>`;
     headerHtml += `</div>`;
 
-    let reqHtml = `<div class="mt-0.5">`;
-    if (dayOfWeek === 0) {
-      reqHtml += `<span class="text-[10px] text-slate-300 block text-center">固定休</span>`;
-    } else if (req) {
-      if (req.request_type === 'abroad') {
-        reqHtml += `<span class="text-[10px] bg-purple-600 text-white font-bold px-1.5 py-0.5 rounded block text-center shadow-xs">✈️ 出國休假</span>`;
-      } else if (req.request_type === 'off') {
-        reqHtml += `<span class="text-[10px] bg-rose-500 text-white font-bold px-1.5 py-0.5 rounded block text-center">🏖️ 預約排休</span>`;
-      }
-    } else {
-      reqHtml += `<span class="text-[10px] text-slate-300 block text-center">＋登記</span>`;
-    }
-    reqHtml += `</div>`;
+    // 共享展示：國定抽中者、出國同仁、一般排休同仁代號
+    let bodyHtml = `<div class="space-y-0.5 mt-0.5">`;
 
-    cell.innerHTML = headerHtml + reqHtml;
+    if (holidayWinner) {
+      bodyHtml += `<div class="text-[9px] bg-purple-100 text-purple-900 font-bold px-1 rounded truncate">🥇國定休:${holidayWinner.clinic_employees?.name || ''}</div>`;
+    }
+
+    const abroadList = dayReqs.filter(r => r.request_type === 'abroad');
+    if (abroadList.length > 0) {
+      const aNames = abroadList.map(r => getEmpCode(r.clinic_employees || { name: r.employee_id })).join(',');
+      bodyHtml += `<div class="text-[9px] bg-purple-600 text-white font-bold px-1 rounded truncate">✈️出國:${aNames}</div>`;
+    }
+
+    const offList = dayReqs.filter(r => r.request_type === 'off');
+    if (offList.length > 0) {
+      const oNames = offList.map(r => getEmpCode(r.clinic_employees || { name: r.employee_id })).join(',');
+      bodyHtml += `<div class="text-[9px] bg-rose-500 text-white font-bold px-1 rounded truncate">🏖️排休:${oNames}</div>`;
+    }
+
+    if (dayOfWeek !== 0 && !holidayWinner && abroadList.length === 0 && offList.length === 0) {
+      bodyHtml += `<div class="text-[10px] text-slate-300 text-center py-1">＋登記</div>`;
+    }
+
+    bodyHtml += `</div>`;
+    cell.innerHTML = headerHtml + bodyHtml;
     grid.appendChild(cell);
   }
 }
@@ -280,12 +371,12 @@ function openUserReqModal(dateStr, dayOfWeek, existingReq, holiday) {
   const isFixed = isFixedStaff(currentUser.displayName);
 
   if (today.getDate() > 15 && !isAdminUser && !isFixed) {
-    alert('⚠️ 預約已於 15 號截止，目前為護理長整合排班期。若有特殊需求請直接洽詢護理長陳慧倪。');
+    alert('⚠️ 預約已於 15 號截止，目前為護理長排班期。若有異動需求請直接聯繫護理長陳慧倪。');
     return;
   }
 
   userReqDate = dateStr;
-  document.getElementById('user-req-date-title').innerText = `📅 ${dateStr} ${holiday ? `(🎌${holiday.name})` : ''} 預約`;
+  document.getElementById('user-req-date-title').innerText = `📅 ${dateStr} ${holiday ? `(🎌${holiday.name})` : ''} 登記`;
 
   const abroadOpt = document.getElementById('user-req-abroad-opt');
   if (isFixed) abroadOpt.classList.add('hidden');
@@ -325,7 +416,6 @@ async function submitUserDayRequest() {
 
   const isNurse = isDialysisNurse(currentUser.displayName, currentUser.role);
 
-  // 一般護理師星期一、三、五排休限制 (最多 2 次)
   if (selectedType === 'off' && isNurse) {
     if (dayOfWeek === 1 || dayOfWeek === 3 || dayOfWeek === 5) {
       const { data: myReqs } = await supabaseClient.from('clinic_schedule_requests')
@@ -340,7 +430,7 @@ async function submitUserDayRequest() {
       }).length;
 
       if (mwfCount >= 2 && currentUser.displayName !== '陳慧倪') {
-        alert('🚨 預約上限：每位透析護理師每月「星期一、三、五」最多僅能預約 2 次一般排休！');
+        alert('🚨 預約上限：每位透析護理師每月「星期一、三、五」最多僅能預約 2 次排休！');
         return;
       }
     }
@@ -360,7 +450,7 @@ async function submitUserDayRequest() {
   }], { onConflict: 'employee_id,request_date' });
 
   if (error) alert('登記失敗：' + error.message);
-  else alert('✅ 登記成功！');
+  else alert('✅ 登記成功！已同步至全員看板與護理長排班系統。');
 
   closeUserReqModal();
   loadRequestCalendar();
@@ -373,7 +463,7 @@ async function deleteCurrentDayRequest() {
   loadRequestCalendar();
 }
 
-// ==================== 3. 護理長排班中心 (4大班別、5種工時、整月時數統計) ====================
+// ==================== 3. 護理長排班中心 (設定班別與工時、同步排休) ====================
 async function initScheduleAdmin() {
   const { data: empData } = await supabaseClient.from('clinic_employees').select('*').eq('is_active', true);
   
@@ -441,7 +531,6 @@ async function loadScheduleCalendar() {
   cachedMonthRequests = reqRes.data || [];
   cachedMonthLotteries = lotteryRes.data || [];
 
-  // 計算並渲染每位護理師整月上班總工時
   renderNurseHoursSummary();
 
   const grid = document.getElementById('calendar-grid');
@@ -476,26 +565,22 @@ async function loadScheduleCalendar() {
 
     let bodyHtml = `<div class="space-y-0.5 mt-0.5">`;
 
-    // 優先級 1：國定假日抽中同仁
     if (holidayWinner) {
       bodyHtml += `<div class="text-[9px] bg-purple-100 text-purple-900 font-bold px-1 rounded truncate">🥇國定休:${holidayWinner.clinic_employees?.name || ''}</div>`;
     }
 
-    // 優先級 2：出國休假同仁
     const abroadReqs = dayRequests.filter(r => r.request_type === 'abroad');
     if (abroadReqs.length > 0) {
       const aNames = abroadReqs.map(r => r.clinic_employees?.name).filter(Boolean).join(',');
       bodyHtml += `<div class="text-[9px] bg-purple-50 text-purple-800 font-bold px-1 rounded truncate">🥈出國:${aNames}</div>`;
     }
 
-    // 優先級 3：一般排休 / 特休
     const generalOffs = dayRequests.filter(r => r.request_type === 'off');
     if (generalOffs.length > 0) {
       const offNames = generalOffs.map(r => r.clinic_employees?.name).filter(Boolean).join(',');
       bodyHtml += `<div class="text-[9px] bg-rose-100 text-rose-800 font-bold px-1 rounded truncate">🏖️排休:${offNames}</div>`;
     }
 
-    // 當日排班出勤人員（標註班別與時數）
     const workSchedules = daySchedules.filter(s => s.shift_name && s.shift_name !== '未排班' && s.shift_name !== '休假');
     if (workSchedules.length > 0) {
       const summaryList = workSchedules.map(s => {
@@ -516,7 +601,6 @@ async function loadScheduleCalendar() {
   }
 }
 
-// 統計並渲染護理師月總工時
 function renderNurseHoursSummary() {
   const summaryBox = document.getElementById('nurse-hours-summary');
   if (!summaryBox) return;
@@ -543,16 +627,14 @@ function renderNurseHoursSummary() {
   });
 }
 
-// 護理長開啟設定班別與時數彈窗
 function openShiftEditModal(dateStr, dayOfWeek, holiday, holidayWinner, dayRequests) {
   if (dayOfWeek === 0) {
-    if (!confirm(`${dateStr} 為週日固定休診日，確定要為此日指派出勤嗎？`)) return;
+    if (!confirm(`${dateStr} 為週日固定休診日，確定要為此日指派特別出勤嗎？`)) return;
   }
 
   editingDate = dateStr;
   document.getElementById('modal-date-title').innerText = `📅 ${dateStr} ${holiday ? `(🎌${holiday.name})` : ''} 排班`;
 
-  // 提示排休優先級資訊
   let priorityHints = [];
   if (holidayWinner) priorityHints.push(`🥇 國定抽中輪休：${holidayWinner.clinic_employees?.name}`);
   const abroads = (dayRequests || []).filter(r => r.request_type === 'abroad').map(r => r.clinic_employees?.name);
@@ -609,7 +691,6 @@ function closeShiftEditModal() {
   editingDate = null;
 }
 
-// 儲存班別與工時
 async function saveModalDaySchedule() {
   if (!editingDate) return;
 
