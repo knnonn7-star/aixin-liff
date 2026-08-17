@@ -3,13 +3,14 @@ const SUPABASE_URL = 'https://bvbknaaljuwxrzvoqcrt.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_fPdr9TBzrw9Ycb6GEpF7UA_zeLqblfo'; 
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// 愛欣診所精確座標（高雄市苓雅區正義路136號）
 const CLINIC_LOCATION = {
   lat: 22.6309209,
   lng: 120.3392031,
   radiusMeters: 300
 };
 
-let currentUser = { lineUserId: '', displayName: '匿名同仁', empId: null };
+let currentUser = { lineUserId: '', displayName: '林和正', empId: null };
 let cachedAllData = [];
 let cachedEmployees = [];
 let cachedShifts = [];
@@ -26,8 +27,46 @@ function getDistanceInMeters(lat1, lon1, lat2, lon2) {
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
 }
 
-// 主入口切換
-function openMainSection(section) {
+function getTaipeiDayRange() {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Taipei',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  const localDateStr = formatter.format(now);
+  const startOfDay = new Date(`${localDateStr}T00:00:00+08:00`).toISOString();
+  const endOfDay = new Date(`${localDateStr}T23:59:59.999+08:00`).toISOString();
+  return { localDateStr, startOfDay, endOfDay };
+}
+
+function refreshGpsLocation() {
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        currentGps.lat = pos.coords.latitude;
+        currentGps.lng = pos.coords.longitude;
+        const dist = getDistanceInMeters(currentGps.lat, currentGps.lng, CLINIC_LOCATION.lat, CLINIC_LOCATION.lng);
+        const statusElem = document.getElementById('gps-status');
+        if (statusElem) {
+          if (dist <= CLINIC_LOCATION.radiusMeters) {
+            statusElem.innerText = `📍 診所範圍內 (${Math.round(dist)}m)`;
+            statusElem.className = "bg-emerald-800/80 px-2 py-0.5 rounded-full text-[10px] text-emerald-200";
+          } else {
+            statusElem.innerText = `📍 距離診所約 ${Math.round(dist)} 公尺`;
+            statusElem.className = "bg-amber-800/80 px-2 py-0.5 rounded-full text-[10px] text-amber-200";
+          }
+        }
+      },
+      err => {
+        const statusElem = document.getElementById('gps-status');
+        if (statusElem) statusElem.innerText = "📍 請開啟精確定位權限";
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  }
+}function openMainSection(section) {
   document.getElementById('sec-main-home').classList.add('hidden');
   document.getElementById('sub-page-header').classList.remove('hidden');
 
@@ -81,27 +120,7 @@ function switchFinTab(tab) {
 async function initLiff() {
   setInterval(updateClock, 1000);
   updateClock();
-
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        currentGps.lat = pos.coords.latitude;
-        currentGps.lng = pos.coords.longitude;
-        const dist = getDistanceInMeters(currentGps.lat, currentGps.lng, CLINIC_LOCATION.lat, CLINIC_LOCATION.lng);
-        const statusElem = document.getElementById('gps-status');
-        if (dist <= CLINIC_LOCATION.radiusMeters) {
-          statusElem.innerText = "📍 GPS 就緒 (診所範圍內)";
-          statusElem.className = "bg-emerald-800/80 px-2 py-0.5 rounded-full text-[10px] text-emerald-200";
-        } else {
-          statusElem.innerText = `📍 距離診所約 ${Math.round(dist)} 公尺`;
-          statusElem.className = "bg-amber-800/80 px-2 py-0.5 rounded-full text-[10px] text-amber-200";
-        }
-      },
-      err => {
-        document.getElementById('gps-status').innerText = "📍 診所標準打卡";
-      }
-    );
-  }
+  refreshGpsLocation();
 
   try {
     await liff.init({ liffId: LIFF_ID });
@@ -116,7 +135,7 @@ async function initLiff() {
       loadTodayAttendance();
     }
   } catch (err) {
-    document.getElementById('user-name').innerText = "林和正 (測試模式)";
+    document.getElementById('user-name').innerText = "林和正";
     currentUser.displayName = "林和正";
     await syncEmployeeRecord();
     loadTodayAttendance();
@@ -134,57 +153,84 @@ function updateClock() {
 }
 
 async function syncEmployeeRecord() {
-  const { data } = await supabaseClient.from('clinic_employees').select('*').eq('name', currentUser.displayName);
-  if (data && data.length > 0) {
-    currentUser.empId = data[0].id;
+  try {
+    const { data } = await supabaseClient.from('clinic_employees').select('*').eq('name', currentUser.displayName);
+    if (data && data.length > 0) {
+      currentUser.empId = data[0].id;
+    }
+  } catch (e) {
+    console.warn('同步員工資料略過:', e);
   }
 }
 
-// 打卡邏輯
 async function punchAttendance(type) {
+  if (!currentGps.lat || !currentGps.lng) {
+    refreshGpsLocation();
+  }
+
   if (!currentUser.empId) await syncEmployeeRecord();
   const btn = document.getElementById(`btn-punch-${type}`);
-  btn.disabled = true;
+  if (btn) btn.disabled = true;
 
-  const { error } = await supabaseClient.from('clinic_attendance').insert([{
-    employee_id: currentUser.empId,
-    punch_type: type,
-    latitude: currentGps.lat,
-    longitude: currentGps.lng,
-    is_valid_location: true
-  }]);
+  try {
+    const { error } = await supabaseClient.from('clinic_attendance').insert([{
+      employee_id: currentUser.empId || null,
+      user_name: currentUser.displayName,
+      punch_type: type,
+      latitude: currentGps.lat,
+      longitude: currentGps.lng,
+      is_valid_location: true,
+      created_at: new Date().toISOString()
+    }]);
 
-  btn.disabled = false;
-  if (error) {
-    alert('打卡失敗：' + error.message);
-  } else {
+    if (error) throw error;
+
     alert(`✅ ${type === 'in' ? '上班' : '下班'}打卡成功！\n時間：${new Date().toLocaleTimeString('zh-TW')}`);
-    loadTodayAttendance();
+    await loadTodayAttendance();
+  } catch (err) {
+    alert('打卡失敗：' + err.message);
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
 async function loadTodayAttendance() {
-  if (!currentUser.empId) return;
-  const todayStr = new Date().toISOString().split('T')[0];
-  const { data } = await supabaseClient.from('clinic_attendance')
-    .select('*')
-    .eq('employee_id', currentUser.empId)
-    .gte('punch_time', `${todayStr}T00:00:00`)
-    .lte('punch_time', `${todayStr}T23:59:59`)
-    .order('punch_time', { ascending: true });
-
   const summary = document.getElementById('today-punch-summary');
-  if (data && data.length > 0) {
+  if (!summary) return;
+
+  try {
+    const { startOfDay, endOfDay } = getTaipeiDayRange();
+    
+    let query = supabaseClient.from('clinic_attendance')
+      .select('*')
+      .gte('created_at', startOfDay)
+      .lte('created_at', endOfDay)
+      .order('created_at', { ascending: true });
+
+    if (currentUser.empId) {
+      query = query.eq('employee_id', currentUser.empId);
+    } else {
+      query = query.eq('user_name', currentUser.displayName);
+    }
+
+    const { data, error } = await query;
+
+    if (error || !data || data.length === 0) {
+      summary.innerText = "今日出勤：尚未打卡";
+      return;
+    }
+
     const last = data[data.length - 1];
-    const tStr = new Date(last.punch_time).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
-    summary.innerText = `今日已打卡 ${data.length} 次 (最後：${last.punch_type === 'in' ? '上班' : '下班'} ${tStr})`;
-  } else {
+    const timeStr = new Date(last.created_at || last.punch_time).toLocaleTimeString('zh-TW', {
+      timeZone: 'Asia/Taipei',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    summary.innerHTML = `今日已打卡 <strong>${data.length}</strong> 次 (最後：${last.punch_type === 'in' ? '上班' : '下班'} ${timeStr})`;
+  } catch (e) {
     summary.innerText = "今日出勤：尚未打卡";
   }
-}
-
-// 人事模組：排班與預約
-function initHrDefaults() {
+}function initHrDefaults() {
   const today = new Date();
   document.getElementById('sch-date').value = today.toISOString().split('T')[0];
 }
@@ -218,7 +264,6 @@ async function loadMySchedule() {
   });
 }
 
-// 護理師預約排班 (每月20號截止)
 async function initRequestPage() {
   const today = new Date();
   const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
@@ -226,7 +271,6 @@ async function initRequestPage() {
   document.getElementById('req-target-month').value = nextMonthStr;
   updateRequestMonthDays();
 
-  // 檢核當前日期是否超過 20 號
   const currentDay = today.getDate();
   const deadlineTag = document.getElementById('request-deadline-tag');
   const submitBtn = document.getElementById('btn-submit-request');
@@ -245,7 +289,6 @@ async function initRequestPage() {
     submitBtn.className = "w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl shadow-sm text-xs transition";
   }
 
-  // 載入班別下拉
   const { data: shifts } = await supabaseClient.from('clinic_shifts').select('*');
   const shiftSelect = document.getElementById('req-shift-select');
   shiftSelect.innerHTML = '';
@@ -345,7 +388,6 @@ async function deleteRequest(id) {
   loadMyRequests();
 }
 
-// 護理長排班與合規檢核 (勞基法四週變形工時引擎)
 async function loadScheduleAdminData() {
   const { data: empData } = await supabaseClient.from('clinic_employees').select('*').eq('is_active', true);
   cachedEmployees = empData || [];
@@ -404,7 +446,6 @@ function renderAllScheduleList() {
   });
 }
 
-// 即時合規檢核 (連六檢測、輪班間隔計算)
 function checkShiftCompliance() {
   const dateStr = document.getElementById('sch-date').value;
   const empId = document.getElementById('sch-emp-select').value;
@@ -423,7 +464,6 @@ function checkShiftCompliance() {
   const targetShift = cachedShifts.find(s => s.id === shiftId);
   const empSchedules = cachedAllSchedules.filter(s => s.employee_id === empId);
 
-  // 1. 檢核連六出勤
   const curDate = new Date(dateStr);
   let consecutiveDays = 0;
   for (let i = 1; i <= 6; i++) {
@@ -445,7 +485,6 @@ function checkShiftCompliance() {
     return;
   }
 
-  // 2. 檢核前一日輪班間隔
   const prevDay = new Date(curDate);
   prevDay.setDate(prevDay.getDate() - 1);
   const prevDayStr = prevDay.toISOString().split('T')[0];
@@ -501,7 +540,6 @@ async function saveSchedule() {
   }
 }
 
-// 帳務模組邏輯
 function initFinanceDefaults() {
   const today = new Date();
   document.getElementById('report-month').value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
@@ -996,3 +1034,4 @@ async function markAsPaid(id) {
 }
 
 initLiff();
+
