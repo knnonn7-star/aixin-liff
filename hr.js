@@ -6,13 +6,13 @@ let cachedMonthLotteries = [];
 let editingDate = null;
 let userReqDate = null;
 
-// 4 大班別設定
-const SHIFT_TYPES = ['未排班', '開門白班', '開門小白班', '正常白班', '正常晚班'];
+// 3 大核心班別 (已刪除「開門小白班」)
+const SHIFT_TYPES = ['未排班', '開門白班', '正常白班', '正常晚班'];
 
 // 5 種標準工時 (小時)
 const WORK_HOURS = [7, 7.5, 8.5, 9, 9.5];
 
-// 診所全員入職日期資料庫 (精確計算 2026 年資與法定特休天數)
+// 診所全員入職日期資料庫
 const EMPLOYEE_ONBOARDING_DATA = {
   '陳惠倪': { onboard: '2005-05-01', roleName: '護理長' },
   '曾憲敏': { onboard: '2012-05-01', roleName: '副護理長' },
@@ -41,24 +41,27 @@ const FIXED_STAFF_ROLES = {
   '胡月霞': { roleName: '清潔人員', tag: 'bg-cyan-100 text-cyan-900 border-cyan-300' }
 };
 
-// 9 大國定假日清單 (共 9 日)
+// 台灣政府公告 2026 年度法定應放國定假日 (共 12 日)
 const NATIONAL_HOLIDAYS_2026 = [
   { name: '元旦', date: '2026-01-01' },
-  { name: '228紀念日', date: '2026-02-28' },
+  { name: '除夕', date: '2026-02-16' },
+  { name: '春節初一', date: '2026-02-17' },
+  { name: '春節初二', date: '2026-02-18' },
+  { name: '春節初三', date: '2026-02-19' },
+  { name: '228和平紀念日', date: '2026-02-28' },
+  { name: '兒童節', date: '2026-04-04' },
   { name: '清明節', date: '2026-04-05' },
   { name: '勞動節', date: '2026-05-01' },
   { name: '端午節', date: '2026-06-19' },
   { name: '中秋節', date: '2026-09-25' },
-  { name: '雙十國慶', date: '2026-10-10' },
-  { name: '光復節', date: '2026-10-25' },
-  { name: '行憲紀念日', date: '2026-12-25' }
+  { name: '雙十國慶', date: '2026-10-10' }
 ];
 
 function getHolidayInfo(dateStr) {
   return NATIONAL_HOLIDAYS_2026.find(h => h.date === dateStr);
 }
 
-// ==================== 勞基法法定特休標準計算函式 ====================
+// ==================== 勞基法特休標準計算 ====================
 function calculateLaborSpecialLeave(name) {
   const info = EMPLOYEE_ONBOARDING_DATA[name];
   if (!info) return { days: 10, seniorityText: '年資：約 2 年 (預設)' };
@@ -72,17 +75,16 @@ function calculateLaborSpecialLeave(name) {
   if (years < 0.5) {
     days = 0;
   } else if (years < 1) {
-    days = 3; // 6個月以上未滿1年：3日
+    days = 3;
   } else if (years < 2) {
-    days = 7; // 1年以上未滿2年：7日
+    days = 7;
   } else if (years < 3) {
-    days = 10; // 2年以上未滿3年：10日
+    days = 10;
   } else if (years < 5) {
-    days = 14; // 3年以上未滿5年：14日
+    days = 14;
   } else if (years < 10) {
-    days = 15; // 5年以上未滿10年：15日
+    days = 15;
   } else {
-    // 10年以上：每1年加給1日，加至30日為止
     const extraYears = Math.floor(years - 10) + 1;
     days = Math.min(30, 15 + extraYears);
   }
@@ -142,7 +144,7 @@ function getEmpCode(emp) {
   return idx >= 0 ? String(idx + 1).padStart(2, '0') : '護理';
 }
 
-// ==================== 1. 「我的班表」月曆與法定特休餘額結算 ====================
+// ==================== 1. 「我的班表」月曆與法定假期餘額結算 ====================
 async function loadMySchedule() {
   if (!currentUser.empId) await syncEmployeeRecord();
   initHrDefaults();
@@ -169,23 +171,23 @@ async function loadMySchedule() {
   const monthSchedules = monthSchRes.data || [];
   const yearLotteries = yearLotteryRes.data || [];
 
-  // 1. 勞基法法定特休精準計算
+  // 1. 勞基法特休
   const { days: totalSpecialLeave, seniorityText } = calculateLaborSpecialLeave(currentUser.displayName);
   const usedSpecialLeave = yearSchedules.filter(s => s.shift_name?.includes('特休') || s.shift_name?.includes('年休')).length;
   document.getElementById('my-seniority-text').innerText = seniorityText;
   document.getElementById('stat-special-leave').innerText = `${usedSpecialLeave} / ${totalSpecialLeave}日`;
 
-  // 2. 國定假日 (法定 9 日)
-  const totalNational = 9;
+  // 2. 政府法定國定假日 (12 日)
+  const totalNational = NATIONAL_HOLIDAYS_2026.length;
   const usedNational = yearLotteries.length;
   document.getElementById('stat-national-leave').innerText = `${usedNational} / ${totalNational}日`;
 
-  // 3. 例休與休息日 (52 週 x 2 = 104 日)
+  // 3. 週休與例休 (104 日)
   const totalWeekend = 104;
   const usedWeekend = yearSchedules.filter(s => s.shift_name === '休假' || s.shift_name === '未排班').length;
   document.getElementById('stat-weekend-leave').innerText = `${usedWeekend} / ${totalWeekend}日`;
 
-  // 4. 工時增減折算天數 (基準 8h/日)
+  // 4. 工時增減折算 (基準 8h/日)
   let netHoursDiff = 0;
   let monthWorkHours = 0;
   yearSchedules.forEach(s => {
@@ -206,7 +208,7 @@ async function loadMySchedule() {
   document.getElementById('stat-hours-offset-days').innerText = `${offsetSign}${hoursOffsetDays.toFixed(1)}日 (${netHoursDiff.toFixed(1)}h)`;
   document.getElementById('my-total-hours').innerText = `${monthWorkHours} 小時`;
 
-  // 5. 總剩餘假期天數結算
+  // 5. 總剩餘假期結算
   const remainingSpecial = Math.max(0, totalSpecialLeave - usedSpecialLeave);
   const remainingNational = Math.max(0, totalNational - usedNational);
   const remainingTotal = (remainingSpecial + remainingNational + hoursOffsetDays);
@@ -479,7 +481,7 @@ async function deleteCurrentDayRequest() {
   loadRequestCalendar();
 }
 
-// ==================== 3. 護理長排班中心 (班別工時設定、工時累計) ====================
+// ==================== 3. 護理長排班中心 (3大班別設定、A4 列印引擎) ====================
 async function initScheduleAdmin() {
   const { data: empData } = await supabaseClient.from('clinic_employees').select('*').eq('is_active', true);
   
@@ -744,7 +746,7 @@ async function saveModalDaySchedule() {
 
 // 國定假日抽籤
 async function runNationalHolidayLottery() {
-  if (!confirm('確定由「透析輪班護理師」進行全年度 9 大國定假日抽籤輪休？（每人均休過一次後才重啟下一輪）')) return;
+  if (!confirm('確定由「透析輪班護理師」進行全年度 12 日政府國定假日抽籤輪休？（每人均休過一次後才重啟下一輪）')) return;
 
   const regularNurses = cachedEmployees.filter(e => isDialysisNurse(e.name, e.role) && e.name !== '陳慧倪');
 
@@ -770,6 +772,100 @@ async function runNationalHolidayLottery() {
 
   const { error } = await supabaseClient.from('clinic_holiday_lottery').upsert(assignments);
   if (error) alert('抽籤儲存失敗：' + error.message);
-  else alert('🎉 2026 年度 9 大國定假日抽籤排定完成！');
+  else alert('🎉 2026 年度政府國定假日抽籤排定完成！');
   loadScheduleCalendar();
+}
+
+// ==================== 4. A4 橫向標準排版列印功能 ====================
+function printScheduleA4() {
+  const monthStr = document.getElementById('admin-sch-month')?.value;
+  if (!monthStr) return alert('請選擇要列印的月份！');
+
+  const [y, m] = monthStr.split('-').map(Number);
+  const totalDays = new Date(y, m, 0).getDate();
+
+  const printContainer = document.getElementById('print-area');
+  if (!printContainer) return;
+
+  const dialysisNurses = cachedEmployees.filter(e => isDialysisNurse(e.name, e.role));
+
+  // 構建 A4 橫向高密度排版表格
+  let tableHeaderCols = '<th class="border border-black p-1 bg-slate-200 text-xs w-20">姓名/日期</th>';
+  for (let d = 1; d <= totalDays; d++) {
+    const dayStr = `${monthStr}-${String(d).padStart(2, '0')}`;
+    const dayOfWeek = new Date(y, m - 1, d).getDay();
+    const holiday = getHolidayInfo(dayStr);
+    const dayName = ['日', '一', '二', '三', '四', '五', '六'][dayOfWeek];
+    const thBg = holiday || dayOfWeek === 0 ? 'bg-rose-100 text-rose-800' : 'bg-slate-50';
+    tableHeaderCols += `<th class="border border-black p-0.5 text-[9px] ${thBg} leading-tight">${d}<br><span class="text-[8px]">${dayName}</span></th>`;
+  }
+  tableHeaderCols += '<th class="border border-black p-1 bg-slate-200 text-xs w-14">總時數</th>';
+
+  let tableRows = '';
+  dialysisNurses.forEach(emp => {
+    const code = getEmpCode(emp);
+    let totalH = 0;
+    let rowCells = `<td class="border border-black p-1 font-bold text-[10px] text-center bg-slate-100">[${code}] ${emp.name}</td>`;
+
+    for (let d = 1; d <= totalDays; d++) {
+      const dayStr = `${monthStr}-${String(d).padStart(2, '0')}`;
+      const dayOfWeek = new Date(y, m - 1, d).getDay();
+      const sch = cachedMonthSchedules.find(s => s.employee_id === emp.id && s.date === dayStr);
+      const req = cachedMonthRequests.find(r => r.employee_id === emp.id && r.request_date === dayStr && r.request_type === 'off');
+      const holidayWon = cachedMonthLotteries.find(l => l.winner_emp_id === emp.id && l.holiday_date === dayStr);
+
+      let cellText = '';
+      let cellBg = '';
+
+      if (holidayWon) {
+        cellText = '國休';
+        cellBg = 'bg-purple-100 font-bold';
+      } else if (req) {
+        cellText = '排休';
+        cellBg = 'bg-rose-100';
+      } else if (sch && sch.shift_name && sch.shift_name !== '未排班') {
+        const h = Number(sch.hours) || 0;
+        totalH += h;
+        const shortShift = sch.shift_name === '開門白班' ? '開白' : (sch.shift_name === '正常白班' ? '白' : '晚');
+        cellText = `${shortShift}<br>${h}`;
+        cellBg = sch.shift_name.includes('開門') ? 'bg-amber-50 font-bold' : (sch.shift_name.includes('晚') ? 'bg-indigo-50 font-bold' : '');
+      } else if (dayOfWeek === 0) {
+        cellText = '休';
+        cellBg = 'bg-slate-100 text-slate-400';
+      }
+
+      rowCells += `<td class="border border-black p-0.5 text-center text-[9px] ${cellBg} leading-tight">${cellText}</td>`;
+    }
+
+    rowCells += `<td class="border border-black p-1 font-black text-center text-xs bg-slate-100">${totalH}h</td>`;
+    tableRows += `<tr>${rowCells}</tr>`;
+  });
+
+  printContainer.innerHTML = `
+    <div class="p-2 space-y-2">
+      <div class="flex justify-between items-end border-b-2 border-black pb-1">
+        <div>
+          <h2 class="text-base font-black tracking-wider">🏥 愛欣診所透析中心 - 護理人員出勤班表</h2>
+          <span class="text-xs font-bold text-slate-700">排班月份：${monthStr} ｜ 護理長：陳慧倪</span>
+        </div>
+        <div class="text-[10px] text-slate-600">
+          列印日期：${new Date().toLocaleDateString('zh-TW')}
+        </div>
+      </div>
+
+      <table class="w-full border-collapse border border-black text-center">
+        <thead><tr>${tableHeaderCols}</tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+
+      <div class="flex justify-between text-xs pt-4 font-bold">
+        <span>製表 / 護理長：陳慧倪 _______________</span>
+        <span>院長 / 醫師：林和正 _______________</span>
+        <span>管理部核定：_______________</span>
+      </div>
+    </div>
+  `;
+
+  // 觸發瀏覽器列印
+  window.print();
 }
