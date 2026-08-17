@@ -2,434 +2,471 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>愛欣診所 - 管理系統</title>
+  
+  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- LINE LIFF SDK -->
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  
+  <!-- Supabase JS SDK -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  
+  <!-- OCR & QR Code 解析庫 -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
   <script src="https://unpkg.com/html5-qrcode"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
   <style>
-    @media print {
-      body * { visibility: hidden; }
-      #printable-report, #printable-report * { visibility: visible; }
-      #printable-report { position: absolute; left: 0; top: 0; width: 100%; }
+    body {
+      -webkit-tap-highlight-color: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     }
   </style>
 </head>
-<body class="bg-slate-100 min-h-screen p-3 md:p-6 flex flex-col items-center">
+<body class="bg-slate-100 text-slate-900 min-h-screen pb-10">
 
-  <div class="bg-white w-full max-w-2xl rounded-2xl shadow-lg p-4 md:p-6 my-auto space-y-4">
-    
-    <!-- 頁頭 -->
-    <div class="text-center">
-      <h1 class="text-xl font-bold text-slate-800 flex items-center justify-center gap-2">
-        🏥 愛欣診所管理系統
-      </h1>
-      <p class="text-xs text-slate-500 mt-0.5">LINE 整合式打卡、人事排班與帳務管理</p>
+  <!-- 頂部導覽列 -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-40 px-4 py-3 shadow-sm flex justify-between items-center">
+    <div class="flex items-center space-x-2">
+      <span class="text-xl">🏥</span>
+      <div>
+        <h1 class="font-black text-sm text-slate-800 leading-tight">愛欣診所管理系統</h1>
+        <p class="text-[10px] text-slate-500 leading-none">出勤打卡・人事排班・帳務管理</p>
+      </div>
     </div>
+    <div class="flex items-center space-x-2">
+      <span id="gps-status" class="bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full text-[10px] font-bold">📍 定位偵測中</span>
+    </div>
+  </header>
 
-    <!-- ==================== 第一層：首頁 ==================== -->
-    <div id="sec-main-home" class="space-y-4">
+  <!-- 子頁面返回標題列 (進入子系統時顯示) -->
+  <div id="sub-page-header" class="hidden bg-slate-800 text-white px-4 py-2.5 flex justify-between items-center shadow">
+    <button onclick="backToMainMenu()" class="text-xs font-bold bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded-lg transition">⬅️ 返回主選單</button>
+    <span id="sub-page-title" class="font-bold text-xs">系統專區</span>
+    <span class="w-12"></span>
+  </div>
+
+  <main class="max-w-md mx-auto p-4 space-y-4">
+
+    <!-- ==================== 1. 首頁打卡與儀表板 ==================== -->
+    <section id="sec-main-home" class="space-y-4">
       
-      <!-- 整合打卡面板 -->
-      <section class="bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-4 rounded-2xl shadow-md text-center space-y-2">
-        <div class="flex justify-between items-center text-xs text-emerald-100 px-1 border-b border-emerald-500/30 pb-1.5">
-          <div class="flex items-center gap-1.5">
-            <span class="text-emerald-200">👤</span>
-            <span id="user-name" class="font-bold text-white bg-emerald-800/80 px-2 py-0.5 rounded-md">載入中...</span>
+      <!-- 打卡時鐘卡片 -->
+      <div class="bg-gradient-to-br from-emerald-600 to-teal-800 text-white rounded-3xl p-5 shadow-lg space-y-4">
+        <div class="flex justify-between items-center">
+          <div class="flex items-center space-x-2">
+            <span class="text-sm">👤</span>
+            <span id="user-name" class="font-bold text-sm bg-black/20 px-2.5 py-0.5 rounded-full backdrop-blur-xs">載入中...</span>
           </div>
-          <span id="gps-status" class="bg-emerald-800/80 px-2 py-0.5 rounded-full text-[10px] text-emerald-200">📍 定位偵測中</span>
+          <span id="clock-date" class="text-xs font-medium text-emerald-100">2026 年 -- 月 -- 日</span>
         </div>
 
-        <div class="py-1">
-          <div class="text-xs text-emerald-100" id="clock-date">2026 年 -- 月 -- 日</div>
-          <div class="text-3xl font-black tracking-wider my-0.5" id="clock-time">00:00:00</div>
+        <div class="text-center py-1">
+          <div id="clock-time" class="font-mono font-black text-4xl tracking-wider text-white drop-shadow-sm">00:00:00</div>
         </div>
-        
-        <div class="grid grid-cols-2 gap-2.5 pt-0.5">
-          <button onclick="punchAttendance('in')" id="btn-punch-in" class="bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-white font-bold py-3 rounded-xl shadow flex items-center justify-center gap-1.5 transition">
-            <span class="text-lg">☀️</span>
-            <span class="text-xs">上班打卡</span>
+
+        <div class="grid grid-cols-2 gap-3 pt-1">
+          <button id="btn-punch-in" onclick="punchAttendance('in')" class="w-full bg-emerald-400 hover:bg-emerald-300 text-slate-900 font-black py-3 rounded-2xl shadow-md text-sm transition active:scale-95 flex justify-center items-center gap-1.5">
+            <span>☀️</span> 上班打卡
           </button>
-          <button onclick="punchAttendance('out')" id="btn-punch-out" class="bg-rose-500 hover:bg-rose-400 active:scale-95 text-white font-bold py-3 rounded-xl shadow flex items-center justify-center gap-1.5 transition">
-            <span class="text-lg">🌙</span>
-            <span class="text-xs">下班打卡</span>
+          <button id="btn-punch-out" onclick="punchAttendance('out')" class="w-full bg-rose-500 hover:bg-rose-400 text-white font-black py-3 rounded-2xl shadow-md text-sm transition active:scale-95 flex justify-center items-center gap-1.5">
+            <span>🌙</span> 下班打卡
           </button>
         </div>
 
-        <div class="pt-2 border-t border-emerald-500/30 flex justify-between items-center text-[11px] text-emerald-100">
+        <div class="border-t border-white/20 pt-2 flex justify-between items-center text-[11px] text-emerald-100">
           <span id="today-punch-summary">今日出勤：載入中...</span>
           <span class="text-[10px] text-emerald-200">免打卡鐘・即時定位</span>
         </div>
-      </section>
-
-      <!-- 系統專區入口 -->
-      <section class="space-y-3 pt-1">
-        <p class="text-xs font-bold text-slate-500 text-center mb-1">系統專區入口：</p>
-        
-        <button onclick="openMainSection('hr')" class="w-full bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold p-4 rounded-2xl shadow-md flex items-center justify-between transition group">
-          <div class="flex items-center gap-3.5">
-            <span class="text-3xl">🏢</span>
-            <div class="text-left">
-              <div class="text-base font-bold">人事管理系統</div>
-              <div class="text-[11px] text-indigo-100 font-normal">個人排班查詢、每月20號前預約排班、四週變形工時合規排班</div>
-            </div>
-          </div>
-          <span class="text-lg group-hover:translate-x-1 transition-transform">➔</span>
-        </button>
-
-        <button onclick="openMainSection('finance')" class="w-full bg-slate-800 hover:bg-slate-900 active:bg-slate-950 text-white font-bold p-4 rounded-2xl shadow-md flex items-center justify-between transition group">
-          <div class="flex items-center gap-3.5">
-            <span class="text-3xl">💰</span>
-            <div class="text-left">
-              <div class="text-base font-bold">帳務管理系統</div>
-              <div class="text-[11px] text-slate-300 font-normal">衛材/藥品進貨點收、發票補登、各廠商結餘與月報表</div>
-            </div>
-          </div>
-          <span class="text-lg group-hover:translate-x-1 transition-transform">➔</span>
-        </button>
-      </section>
-
-    </div>
-
-    <!-- 第二層頂部返回列 -->
-    <div id="sub-page-header" class="hidden pb-2 border-b border-slate-200 flex justify-between items-center">
-      <button onclick="backToMainMenu()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-lg flex items-center gap-1">
-        ⬅️ 返回首頁
-      </button>
-      <span id="sub-page-title" class="text-xs font-bold text-slate-700"></span>
-    </div>
-
-    <!-- ==================== 第二層 A：人事管理系統 ==================== -->
-    <section id="sec-hr" class="hidden space-y-4">
-      <div class="grid grid-cols-3 gap-1 bg-slate-200 p-1 rounded-xl text-xs font-bold text-slate-700">
-        <button id="hr-tab-myschedule" onclick="switchHrTab('myschedule')" class="py-2 rounded-lg bg-indigo-600 text-white shadow-sm transition">📅 我的班表</button>
-        <button id="hr-tab-request" onclick="switchHrTab('request')" class="py-2 rounded-lg hover:text-slate-900 transition">📝 預約排班</button>
-        <button id="hr-tab-scheduling" onclick="switchHrTab('scheduling')" class="py-2 rounded-lg hover:text-slate-900 transition">✍️ 護理長排班</button>
       </div>
 
-      <!-- 子頁 1：我的個人排班表 -->
-      <div id="hr-sec-myschedule" class="space-y-3">
-        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 text-xs">
-          <div class="flex justify-between items-center font-bold text-slate-700 border-b pb-1.5">
-            <span>📋 我的本月已發布班表</span>
-            <button onclick="loadMySchedule()" class="text-indigo-600 text-[11px]">🔄 重新整理</button>
+      <!-- 系統入口選單 -->
+      <div class="space-y-2.5">
+        <div class="text-xs font-bold text-slate-500 px-1">系統專區入口：</div>
+        
+        <button onclick="openMainSection('hr')" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-2xl shadow-md transition flex items-center justify-between group active:scale-98">
+          <div class="flex items-center space-x-3 text-left">
+            <span class="text-2xl p-2 bg-white/10 rounded-xl">🏢</span>
+            <div>
+              <h2 class="font-black text-sm">人事管理系統</h2>
+              <p class="text-[11px] text-indigo-200">個人班表、每月15號預約排班、護理長月曆排班</p>
+            </div>
           </div>
-          <div id="my-schedule-list" class="space-y-1.5 max-h-60 overflow-y-auto">
-            <p class="text-slate-400 text-center py-3">載入班表中...</p>
+          <span class="text-lg text-indigo-200 group-hover:translate-x-1 transition">➔</span>
+        </button>
+
+        <button onclick="openMainSection('finance')" class="w-full bg-slate-900 hover:bg-slate-800 text-white p-4 rounded-2xl shadow-md transition flex items-center justify-between group active:scale-98">
+          <div class="flex items-center space-x-3 text-left">
+            <span class="text-2xl p-2 bg-white/10 rounded-xl">💰</span>
+            <div>
+              <h2 class="font-black text-sm">帳務管理系統</h2>
+              <p class="text-[11px] text-slate-400">進貨簽收單、隨貨發票OCR辨識、待付款月報表</p>
+            </div>
+          </div>
+          <span class="text-lg text-slate-400 group-hover:translate-x-1 transition">➔</span>
+        </button>
+      </div>
+
+    </section>
+
+
+    <!-- ==================== 2. 人事管理系統 ==================== -->
+    <section id="sec-hr" class="hidden space-y-4">
+      
+      <!-- HR 內部頁籤 -->
+      <div class="grid grid-cols-3 gap-1 bg-slate-200 p-1 rounded-xl text-xs font-bold text-center text-slate-600">
+        <button id="hr-tab-myschedule" onclick="switchHrTab('myschedule')" class="py-2 rounded-lg bg-indigo-600 text-white shadow-xs">📅 我的班表</button>
+        <button id="hr-tab-request" onclick="switchHrTab('request')" class="py-2 rounded-lg hover:text-slate-900 transition">📝 預約排班</button>
+        <button id="hr-tab-scheduling" onclick="switchHrTab('scheduling')" class="py-2 rounded-lg hover:text-slate-900 transition">👩‍⚕️ 護理長排班</button>
+      </div>
+
+      <!-- 分頁 1: 我的班表 -->
+      <div id="hr-sec-myschedule" class="space-y-3">
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+          <h2 class="font-bold text-slate-800 text-xs flex justify-between items-center">
+            <span>📅 當月個人排定班表</span>
+            <button onclick="loadMySchedule()" class="text-indigo-600 font-normal hover:underline text-[11px]">🔄 重新整理</button>
+          </h2>
+          <div id="my-schedule-list" class="space-y-2">
+            <!-- 動態載入班表 -->
           </div>
         </div>
       </div>
 
-      <!-- 子頁 2：護理師預約排班與預假 (每月20號截止) -->
+      <!-- 分頁 2: 預約排班 (15號截止) -->
       <div id="hr-sec-request" class="hidden space-y-3">
-        <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-3.5 space-y-3 text-xs">
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
           <div class="flex justify-between items-center">
-            <span class="font-bold text-indigo-900 text-sm">📝 下月份預約排班需求</span>
-            <span id="request-deadline-tag" class="bg-indigo-200 text-indigo-800 text-[10px] px-2 py-0.5 rounded font-bold">20號截止</span>
+            <h2 class="font-bold text-slate-800 text-xs">📝 下月份預約排班 / 休假</h2>
+            <span id="request-deadline-tag" class="text-[10px] px-2 py-0.5 rounded font-bold">載入中...</span>
           </div>
-          <p class="text-[11px] text-indigo-700">依診所規定，請於每月 20 號 23:59 前填寫下月份之預休 (OFF) 或希望班別，逾期系統將自動鎖定。</p>
 
-          <form id="schedule-request-form" class="space-y-2.5 pt-1">
-            <div class="grid grid-cols-2 gap-2">
-              <div>
-                <label class="block font-semibold text-slate-600 mb-1">目標預約月份</label>
-                <input type="month" id="req-target-month" class="w-full p-2 border rounded-lg bg-white" onchange="updateRequestMonthDays()">
-              </div>
-              <div>
-                <label class="block font-semibold text-slate-600 mb-1">希望日期</label>
-                <input type="date" id="req-date" class="w-full p-2 border rounded-lg bg-white" required>
-              </div>
+          <form id="schedule-request-form" class="space-y-2.5 text-xs">
+            <div>
+              <label class="block text-slate-600 font-bold mb-1">目標預約月份</label>
+              <input type="month" id="req-target-month" onchange="updateRequestMonthDays()" class="w-full border rounded-xl p-2 font-bold bg-slate-50 border-slate-300">
             </div>
 
             <div>
-              <label class="block font-semibold text-slate-600 mb-1">預約類型</label>
-              <select id="req-type" class="w-full p-2 border rounded-lg bg-white" onchange="toggleRequestShiftSelect()">
-                <option value="off">🏖️ 預約休假 (OFF)</option>
-                <option value="preferred_shift">⭐ 希望排定班別 (A/B/C)</option>
-                <option value="avoid_shift">❌ 避開班別</option>
+              <label class="block text-slate-600 font-bold mb-1">選擇預約日期</label>
+              <input type="date" id="req-date" required class="w-full border rounded-xl p-2 font-bold bg-slate-50 border-slate-300">
+            </div>
+
+            <div>
+              <label class="block text-slate-600 font-bold mb-1">預約類型</label>
+              <select id="req-type" onchange="toggleRequestShiftSelect()" class="w-full border rounded-xl p-2 font-bold bg-slate-50 border-slate-300">
+                <option value="off">🏖️ 預約休假</option>
+                <option value="shift">⭐ 希望排定班別</option>
               </select>
             </div>
 
             <div id="req-shift-group" class="hidden">
-              <label class="block font-semibold text-slate-600 mb-1">指定班別</label>
-              <select id="req-shift-select" class="w-full p-2 border rounded-lg bg-white"></select>
+              <label class="block text-slate-600 font-bold mb-1">指定班別</label>
+              <select id="req-shift-select" class="w-full border rounded-xl p-2 font-bold bg-slate-50 border-slate-300">
+                <!-- 動態注入早/中班 -->
+              </select>
             </div>
 
             <div>
-              <label class="block font-semibold text-slate-600 mb-1">事由 / 備註說明 (選填)</label>
-              <input type="text" id="req-reason" placeholder="例如：進修課程、家庭聚會" class="w-full p-2 border rounded-lg bg-white">
+              <label class="block text-slate-600 font-bold mb-1">事由 / 備註說明 (選填)</label>
+              <input type="text" id="req-reason" placeholder="例如：進修、家庭事宜" class="w-full border rounded-xl p-2 bg-slate-50 border-slate-300">
             </div>
 
-            <button type="submit" id="btn-submit-request" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl shadow-sm text-xs transition">
-              📤 送出排班需求
+            <button type="submit" id="btn-submit-request" class="w-full bg-indigo-600 text-white font-bold py-2.5 rounded-xl shadow-sm text-xs">
+              📤 送出排班/休假預約
             </button>
           </form>
         </div>
 
-        <div class="space-y-2">
-          <h4 class="text-xs font-bold text-slate-700">📋 我的下月預約清單</h4>
-          <div id="my-request-list" class="space-y-1.5 max-h-48 overflow-y-auto text-xs">
-            <p class="text-slate-400 text-center py-3">載入中...</p>
+        <!-- 已登記的預約清單 -->
+        <div class="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+          <h3 class="font-bold text-slate-700 text-xs">📋 我的下月預約清單</h3>
+          <div id="my-request-list" class="space-y-1.5 text-xs">
+            <!-- 動態載入 -->
           </div>
         </div>
       </div>
 
-      <!-- 子頁 3：護理長排班調度 (勞基法四週變形工時合規引擎) -->
-      <div id="hr-sec-scheduling" class="hidden space-y-3">
-        
-        <!-- 四週變形工時與勞資決議防呆指示條 -->
-        <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs space-y-1">
-          <div class="font-bold text-amber-900 flex justify-between items-center">
-            <span>⚖️ 勞基法四週變形工時與工會決議合規檢核</span>
-            <span id="compliance-status-tag" class="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold text-[10px]">🟢 系統即時監控中</span>
-          </div>
-          <ul class="text-[11px] text-amber-800 list-disc pl-4 space-y-0.5">
-            <li>每日正常工時上限 10 小時，每週正常工時上限 48 小時。</li>
-            <li>每 2 週至少 2 天例假，每 4 週至少 4 天休息日（4 週合計至少 8 天例休）。</li>
-            <li>輪班間隔原則 11 小時，因緊急透析或教育訓練得彈性調整為不少於 8 小時。</li>
-          </ul>
-        </div>
-
-        <!-- 排班表單 -->
-        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2.5 text-xs">
-          <div class="font-bold text-slate-800">✍️ 排定 / 調整同仁班表</div>
-
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="block font-semibold text-slate-600 mb-1">排班日期</label>
-              <input type="date" id="sch-date" class="w-full p-2 border rounded-lg bg-white" onchange="checkShiftCompliance()">
-            </div>
-            <div>
-              <label class="block font-semibold text-slate-600 mb-1">選擇員工</label>
-              <select id="sch-emp-select" class="w-full p-2 border rounded-lg bg-white" onchange="checkShiftCompliance()"></select>
-            </div>
-          </div>
-
+      <!-- 分頁 3: 護理長月曆視覺化排班面板 -->
+      <div id="hr-sec-scheduling" class="hidden space-y-4">
+        <div class="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
           <div>
-            <label class="block font-semibold text-slate-600 mb-1">排定班別</label>
-            <select id="sch-shift-select" class="w-full p-2 border rounded-lg bg-white" onchange="checkShiftCompliance()"></select>
+            <h3 class="font-bold text-slate-800 text-xs">📅 護理長月曆排班</h3>
+            <p class="text-[10px] text-slate-500">週日休診；週一三五有早/中班，週二四六僅早班</p>
           </div>
-
-          <!-- 特殊輪班間隔註記 (當間隔 < 11 小時但 >= 8 小時) -->
-          <div id="special-interval-box" class="hidden bg-amber-100/70 border border-amber-300 p-2.5 rounded-lg space-y-1.5">
-            <label class="flex items-center gap-1.5 font-bold text-amber-900">
-              <input type="checkbox" id="sch-is-special" class="rounded text-amber-600">
-              ⚠️ 啟用輪班間隔縮短至 8 小時（符合工會決議）
-            </label>
-            <select id="sch-special-reason" class="w-full p-1.5 border rounded bg-white text-[11px]">
-              <option value="緊急透析需求">緊急透析需求（勞資會議第三案）</option>
-              <option value="領有證照專業人員教育訓練">領有證照專業人員教育訓練（勞資會議第三案）</option>
-              <option value="天災事變或突發醫療事件">天災事變或突發醫療事件</option>
-            </select>
+          <div class="flex items-center gap-2">
+            <input type="month" id="admin-sch-month" onchange="loadScheduleCalendar()" class="border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold text-indigo-900 bg-indigo-50">
+            <button onclick="runNationalHolidayLottery()" class="bg-amber-500 hover:bg-amber-600 text-white font-bold px-2 py-1 rounded-lg text-xs shadow-sm">🎲 國定假日抽籤</button>
           </div>
-
-          <!-- 合規警告訊息顯示區 -->
-          <div id="sch-warning-msg" class="hidden p-2 rounded bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-bold"></div>
-
-          <button onclick="saveSchedule()" id="btn-save-schedule" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-xs shadow-sm transition">
-            💾 儲存並發布排班
-          </button>
         </div>
 
-        <!-- 全院排班總覽 -->
-        <div class="space-y-2">
-          <div class="flex justify-between items-center">
-            <h4 class="text-xs font-bold text-slate-700">📋 全院排班明細</h4>
-            <button onclick="loadScheduleAdminData()" class="text-indigo-600 text-xs font-bold">🔄 重新整理</button>
+        <!-- 護理師代碼速查標籤 -->
+        <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs">
+          <span class="font-bold text-slate-700">👩‍⚕️ 護理師代碼名冊：</span>
+          <div id="nurse-code-tags" class="flex flex-wrap gap-1.5 mt-1.5">
+            <!-- 動態注入代碼標籤 -->
           </div>
-          <div id="all-schedule-list" class="space-y-1.5 max-h-56 overflow-y-auto text-xs">
-            <p class="text-slate-400 text-center py-4">載入中...</p>
+        </div>
+
+        <!-- 月曆主體網格 -->
+        <div class="bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
+          <div class="grid grid-cols-7 gap-1 text-center font-bold text-[11px] text-slate-600 mb-1">
+            <span class="text-rose-500 py-1">週日</span>
+            <span class="py-1">週一</span>
+            <span class="py-1">週二</span>
+            <span class="py-1">週三</span>
+            <span class="py-1">週四</span>
+            <span class="py-1">週五</span>
+            <span class="text-indigo-600 py-1">週六</span>
+          </div>
+          <div id="calendar-grid" class="grid grid-cols-7 gap-1">
+            <!-- 動態注入 1 ~ 31 日格子 -->
           </div>
         </div>
       </div>
 
     </section>
 
-    <!-- ==================== 第二層 B：帳務管理系統 ==================== -->
+
+    <!-- ==================== 3. 帳務管理系統 ==================== -->
     <section id="sec-finance" class="hidden space-y-4">
-      <div class="grid grid-cols-3 gap-1 bg-slate-200 p-1 rounded-xl text-xs font-bold text-slate-700">
-        <button id="fin-tab-register" onclick="switchFinTab('register')" class="py-2 rounded-lg bg-slate-900 text-white shadow-sm transition">📦 現場進貨</button>
-        <button id="fin-tab-invoice" onclick="switchFinTab('invoice')" class="py-2 rounded-lg hover:text-slate-900 transition">📷 櫃檯補登</button>
-        <button id="fin-tab-report" onclick="switchFinTab('report')" class="py-2 rounded-lg hover:text-slate-900 transition">📊 財務月報</button>
+      
+      <!-- 財務內部頁籤 -->
+      <div class="grid grid-cols-3 gap-1 bg-slate-200 p-1 rounded-xl text-xs font-bold text-center text-slate-600">
+        <button id="fin-tab-register" onclick="switchFinTab('register')" class="py-2 rounded-lg bg-slate-900 text-white shadow-xs">📝 現場登記</button>
+        <button id="fin-tab-invoice" onclick="switchFinTab('invoice')" class="py-2 rounded-lg hover:text-slate-900 transition">🧾 待補發票</button>
+        <button id="fin-tab-report" onclick="switchFinTab('report')" class="py-2 rounded-lg hover:text-slate-900 transition">📊 應付與月報</button>
       </div>
 
-      <!-- 現場進貨登記 -->
-      <div id="fin-sec-register" class="space-y-4">
-        <form id="cash-form" class="space-y-3.5">
-          <div>
-            <label class="block text-xs font-bold text-slate-700 mb-1">登記類型</label>
-            <div class="grid grid-cols-2 gap-2">
-              <label class="flex items-center justify-center p-2 border-2 border-blue-500 bg-blue-50 text-blue-800 rounded-xl cursor-pointer font-bold text-xs"><input type="radio" name="type" value="delivery" checked onchange="updateFormMode()" class="mr-1.5">📦 衛材進貨</label>
-              <label class="flex items-center justify-center p-2 border-2 border-indigo-500 bg-indigo-50 text-indigo-800 rounded-xl cursor-pointer font-bold text-xs"><input type="radio" name="type" value="pharma" onchange="updateFormMode()" class="mr-1.5">💊 藥品進貨</label>
-              <label class="flex items-center justify-center p-2 border-2 border-rose-500 bg-rose-50 text-rose-800 rounded-xl cursor-pointer font-bold text-xs"><input type="radio" name="type" value="expense" onchange="updateFormMode()" class="mr-1.5">💸 零用金支出</label>
-              <label class="flex items-center justify-center p-2 border-2 border-emerald-500 bg-emerald-50 text-emerald-800 rounded-xl cursor-pointer font-bold text-xs"><input type="radio" name="type" value="income" onchange="updateFormMode()" class="mr-1.5">💰 自費收入</label>
+      <!-- 分頁 1: 現場登記 -->
+      <div id="fin-sec-register" class="space-y-3">
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <form id="cash-form" class="space-y-3 text-xs">
+            <div>
+              <label class="block text-slate-600 font-bold mb-1">登記類型</label>
+              <div class="grid grid-cols-2 gap-2 font-bold">
+                <label class="flex items-center p-2 rounded-xl border border-slate-300 bg-slate-50 cursor-pointer">
+                  <input type="radio" name="type" value="delivery" checked onchange="updateFormMode()" class="mr-1.5"> 衛材進貨
+                </label>
+                <label class="flex items-center p-2 rounded-xl border border-slate-300 bg-slate-50 cursor-pointer">
+                  <input type="radio" name="type" value="pharma" onchange="updateFormMode()" class="mr-1.5"> 藥品進貨
+                </label>
+                <label class="flex items-center p-2 rounded-xl border border-slate-300 bg-slate-50 cursor-pointer">
+                  <input type="radio" name="type" value="expense" onchange="updateFormMode()" class="mr-1.5"> 零用金支出
+                </label>
+                <label class="flex items-center p-2 rounded-xl border border-slate-300 bg-slate-50 cursor-pointer">
+                  <input type="radio" name="type" value="income" onchange="updateFormMode()" class="mr-1.5"> 診所收入
+                </label>
+              </div>
             </div>
-          </div>
-          <div id="supplier-group">
-            <label class="block text-xs font-bold text-slate-700 mb-1">進貨廠商</label>
-            <select id="supplier" class="w-full p-2.5 border border-slate-300 rounded-xl text-sm bg-white">
-              <option value="台灣百特 (Baxter)">台灣百特 (Baxter)</option>
-              <option value="台灣費森尤斯 (Fresenius)">台灣費森尤斯 (Fresenius)</option>
-              <option value="濟生醫藥">濟生醫藥</option>
-              <option value="杏昌生技">杏昌生技</option>
-              <option value="合作藥局/其他大藥廠">合作藥局/其他大藥廠</option>
-            </select>
-          </div>
-          <div id="category-group" class="hidden">
-            <label class="block text-xs font-bold text-slate-700 mb-1">分類項目</label>
-            <select id="category" class="w-full p-2.5 border border-slate-300 rounded-xl text-sm bg-white"></select>
-          </div>
-          <div id="delivery-doc-mode-section" class="space-y-2.5">
-            <label class="block text-xs font-bold text-slate-700 mb-1">本次進貨憑證種類</label>
-            <div class="grid grid-cols-2 gap-2">
-              <label class="flex items-center justify-center p-2.5 border-2 border-slate-400 bg-slate-50 text-slate-800 rounded-xl cursor-pointer font-bold text-xs"><input type="radio" name="doc_mode" value="receipt_only" checked onchange="toggleDocMode()" class="mr-1.5">📄 只有簽收單 (發票後補)</label>
-              <label class="flex items-center justify-center p-2.5 border-2 border-emerald-500 bg-emerald-50 text-emerald-800 rounded-xl cursor-pointer font-bold text-xs"><input type="radio" name="doc_mode" value="has_invoice" onchange="toggleDocMode()" class="mr-1.5">🧾 隨貨附發票 (一次結案)</label>
+
+            <!-- 進貨專用：廠商名稱 -->
+            <div id="supplier-group">
+              <label class="block text-slate-600 font-bold mb-1">進貨廠商名稱</label>
+              <input type="text" id="supplier" placeholder="例如：裕利、杏全、台灣大塚" class="w-full border rounded-xl p-2 font-bold bg-slate-50 border-slate-300">
             </div>
-            <div id="doc-receipt-box" class="bg-slate-50 p-3 rounded-xl border border-slate-200">
-              <label class="block text-xs font-bold text-slate-700 mb-1">拍照上傳簽收單 / 送貨單照片</label>
-              <input type="file" id="receipt" accept="image/*" class="w-full text-xs text-slate-500">
+
+            <!-- 零用金專用：分類 -->
+            <div id="category-group" class="hidden">
+              <label class="block text-slate-600 font-bold mb-1">收支項目分類</label>
+              <select id="category" class="w-full border rounded-xl p-2 font-bold bg-slate-50 border-slate-300"></select>
             </div>
-            <div id="doc-invoice-box" class="hidden bg-emerald-50 p-3 rounded-xl border border-emerald-200 space-y-2">
+
+            <!-- 進貨單據模式 -->
+            <div id="delivery-doc-mode-section" class="space-y-2 pt-1 border-t border-slate-100">
+              <label class="block text-slate-600 font-bold">進貨憑證狀況</label>
+              <div class="grid grid-cols-2 gap-2">
+                <label class="flex items-center p-2 rounded-xl border border-blue-200 bg-blue-50/50 cursor-pointer text-[11px] font-bold">
+                  <input type="radio" name="doc_mode" value="receipt_only" checked onchange="toggleDocMode()" class="mr-1"> 僅簽收單(待補發票)
+                </label>
+                <label class="flex items-center p-2 rounded-xl border border-emerald-200 bg-emerald-50/50 cursor-pointer text-[11px] font-bold">
+                  <input type="radio" name="doc_mode" value="has_invoice" onchange="toggleDocMode()" class="mr-1"> 隨貨附發票(拍照辨識)
+                </label>
+              </div>
+            </div>
+
+            <!-- 簽收單上傳區 -->
+            <div id="doc-receipt-box">
+              <label class="block text-slate-600 font-bold mb-1">拍照上傳簽收單照片</label>
+              <input type="file" id="receipt" accept="image/*" capture="environment" class="w-full border rounded-xl p-1.5 text-xs bg-slate-50 border-slate-300">
+            </div>
+
+            <!-- 發票與金額輸入/辨識區 -->
+            <div id="doc-invoice-box" class="hidden space-y-2 p-2.5 bg-emerald-50/60 rounded-xl border border-emerald-200">
               <div class="flex justify-between items-center">
-                <span class="text-xs font-bold text-emerald-900">🧾 隨貨發票辨識</span>
-                <span id="reg-ocr-status" class="text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded font-bold">免拍照簽收單</span>
+                <span class="font-bold text-emerald-900 text-xs">📷 發票智能辨識</span>
+                <span id="reg-ocr-status" class="text-[10px] text-emerald-700">就緒</span>
               </div>
-              <label class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center cursor-pointer shadow-sm w-full">
-                📸 拍照發票辨識號碼與金額
-                <input type="file" id="reg-qr-file" accept="image/*" class="hidden" onchange="processInvoiceImage(this, 'reg-invoice-no', 'amount', 'reg-ocr-status')">
-              </label>
-              <div class="grid grid-cols-2 gap-2 pt-1">
+              <input type="file" id="reg-invoice-file" accept="image/*" capture="environment" onchange="processInvoiceImage(this, 'reg-invoice-no', 'amount', 'reg-ocr-status')" class="w-full border rounded-lg p-1 text-[11px] bg-white border-emerald-300">
+              
+              <div class="grid grid-cols-2 gap-2">
                 <div>
-                  <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">發票號碼</label>
-                  <input type="text" id="reg-invoice-no" placeholder="例：AB12345678" class="w-full p-2 border rounded-lg text-xs font-mono bg-white">
+                  <label class="block text-slate-600 font-bold mb-0.5">發票號碼 (10碼)</label>
+                  <input type="text" id="reg-invoice-no" placeholder="AB12345678" class="w-full border rounded-lg p-1.5 font-mono uppercase bg-white border-slate-300">
                 </div>
                 <div>
-                  <label class="block text-[11px] font-semibold text-slate-600 mb-0.5">發票總金額 (NT$)</label>
-                  <input type="number" id="amount" min="0" placeholder="0" class="w-full p-2 border rounded-lg text-xs bg-white">
+                  <label class="block text-slate-600 font-bold mb-0.5">發票總金額 (NT$)</label>
+                  <input type="number" id="amount" placeholder="0" class="w-full border rounded-lg p-1.5 font-bold bg-white border-slate-300">
                 </div>
               </div>
             </div>
-          </div>
-          <div>
-            <label class="block text-xs font-bold text-slate-700 mb-1">備註 / 進貨品項簡述</label>
-            <textarea id="note" rows="2" placeholder="例如：透析液 10 箱" class="w-full p-2.5 border rounded-xl text-sm"></textarea>
-          </div>
-          <button type="submit" id="submit-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md text-sm">確認點收並送出</button>
-        </form>
+
+            <div>
+              <label class="block text-slate-600 font-bold mb-1">備註說明 (品名/數量)</label>
+              <input type="text" id="note" placeholder="例如：透析管路 5 箱、抗生素 2 盒" class="w-full border rounded-xl p-2 bg-slate-50 border-slate-300">
+            </div>
+
+            <button type="submit" id="submit-btn" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 rounded-xl shadow-sm text-xs transition">
+              確認點收並送出
+            </button>
+          </form>
+        </div>
       </div>
 
-      <!-- 櫃檯補登 -->
+      <!-- 分頁 2: 待補發票清單 -->
       <div id="fin-sec-invoice" class="hidden space-y-3">
-        <div class="flex justify-between items-center bg-amber-50 p-2.5 rounded-xl border border-amber-200 text-xs">
-          <span class="text-amber-800 font-bold">待補發票與核對清單</span>
-          <button onclick="loadPendingInvoices()" class="bg-amber-200 text-amber-900 px-2 py-1 rounded-lg font-bold">🔄 重新整理</button>
-        </div>
-        <div id="pending-invoice-list" class="space-y-2.5">
-          <p class="text-center text-xs text-slate-400 py-4">資料載入中...</p>
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+          <h2 class="font-bold text-slate-800 text-xs">🧾 待補發票與金額之進貨項目</h2>
+          <div id="pending-invoice-list" class="space-y-2">
+            <!-- 動態載入待補項目 -->
+          </div>
         </div>
       </div>
 
-      <!-- 財務月報 -->
-      <div id="fin-sec-report" class="hidden space-y-4">
-        <div>
-          <h3 class="text-xs font-bold text-slate-700 mb-1.5">📌 待處理款項概覽</h3>
-          <div class="grid grid-cols-2 gap-2 text-xs">
-            <div class="bg-amber-50 border border-amber-200 rounded-xl p-3">
-              <span class="text-amber-800 font-bold">待補發票簽收單</span>
-              <p id="stat-pending-count" class="text-xl font-black text-amber-700 mt-1">0 筆</p>
+      <!-- 分頁 3: 應付帳款與月結報表 -->
+      <div id="fin-sec-report" class="hidden space-y-3">
+        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+          <div class="grid grid-cols-2 gap-2 text-center">
+            <div class="bg-blue-50 p-2.5 rounded-xl border border-blue-100">
+              <span class="text-[10px] text-blue-600 font-bold">待補發票總數</span>
+              <div id="stat-pending-count" class="text-base font-black text-blue-900 mt-0.5">0 筆</div>
             </div>
-            <div class="bg-rose-50 border border-rose-200 rounded-xl p-3">
-              <span class="text-rose-800 font-bold">全院應付帳款總額</span>
-              <p id="stat-unpaid-total" class="text-xl font-black text-rose-700 mt-1">NT$ 0</p>
-            </div>
-          </div>
-        </div>
-        <div>
-          <h3 class="text-xs font-bold text-slate-700 mb-1.5">📅 各廠商依付款到期月份結餘</h3>
-          <div id="supplier-timeline-list" class="space-y-2">
-            <p class="text-center text-xs text-slate-400 py-3">分析中...</p>
-          </div>
-        </div>
-        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-3">
-          <div class="flex gap-2 items-center">
-            <input type="month" id="report-month" class="p-2 border rounded-lg text-xs bg-white font-bold text-slate-700 flex-1">
-            <button onclick="generateMonthlyReport()" class="bg-slate-800 hover:bg-slate-900 text-white font-bold px-3 py-2 rounded-lg text-xs">🔍 生成月報</button>
-          </div>
-          <div id="report-result-box" class="hidden space-y-3 pt-2 border-t border-slate-200">
-            <div id="printable-report" class="bg-white p-3 rounded-xl border border-slate-200 space-y-2 text-xs">
-              <div class="border-b pb-1.5 text-center">
-                <h2 id="report-title" class="text-sm font-bold text-slate-800">愛欣診所 - 月度財務報表</h2>
-                <p id="report-period" class="text-[10px] text-slate-500"></p>
-              </div>
-              <div class="grid grid-cols-3 gap-1.5 text-center">
-                <div class="bg-emerald-50 p-1.5 rounded"><span class="text-[10px] text-emerald-700">總收入</span><p id="rep-income" class="font-bold text-emerald-700 text-xs">NT$ 0</p></div>
-                <div class="bg-rose-50 p-1.5 rounded"><span class="text-[10px] text-rose-700">支出</span><p id="rep-expense" class="font-bold text-rose-700 text-xs">NT$ 0</p></div>
-                <div class="bg-blue-50 p-1.5 rounded"><span class="text-[10px] text-blue-700">進貨</span><p id="rep-delivery" class="font-bold text-blue-700 text-xs">NT$ 0</p></div>
-              </div>
-              <ul id="rep-supplier-breakdown" class="space-y-1 text-[11px] text-slate-600 pl-1"></ul>
-            </div>
-            <div class="flex gap-2">
-              <button onclick="window.print()" class="flex-1 bg-slate-800 text-white font-bold py-1.5 rounded-lg text-xs">🖨️ 列印</button>
-              <button onclick="exportCsvReport()" class="flex-1 bg-emerald-600 text-white font-bold py-1.5 rounded-lg text-xs">📥 匯出 CSV</button>
+            <div class="bg-rose-50 p-2.5 rounded-xl border border-rose-100">
+              <span class="text-[10px] text-rose-600 font-bold">未結應付總額</span>
+              <div id="stat-unpaid-total" class="text-base font-black text-rose-900 mt-0.5">NT$ 0</div>
             </div>
           </div>
-        </div>
-        <div>
-          <h3 class="text-xs font-bold text-slate-700 mb-1.5">💵 待付款項目核銷明細</h3>
-          <div id="admin-data-list" class="space-y-2"></div>
+
+          <div class="space-y-1.5">
+            <span class="font-bold text-slate-700 text-xs">🗓️ 各月份廠商應付帳款結餘：</span>
+            <div id="supplier-timeline-list" class="space-y-2"></div>
+          </div>
+
+          <div class="pt-2 border-t border-slate-100 space-y-2">
+            <div class="flex items-center gap-2">
+              <input type="month" id="report-month" class="border rounded-xl p-1.5 text-xs font-bold bg-slate-50 border-slate-300">
+              <button onclick="generateMonthlyReport()" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1.5 rounded-xl text-xs shadow-xs">📊 產生月報</button>
+              <button onclick="exportCsvReport()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-xl text-xs shadow-xs">📥 CSV</button>
+            </div>
+          </div>
+
+          <!-- 月報統計結果顯示區 -->
+          <div id="report-result-box" class="hidden bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2 text-xs">
+            <div class="flex justify-between font-bold text-slate-800 border-b pb-1">
+              <span id="report-title">財務月報</span>
+              <span id="report-period" class="text-slate-500 font-normal"></span>
+            </div>
+            <div class="grid grid-cols-3 gap-1 text-center font-bold">
+              <div class="bg-white p-1.5 rounded border border-slate-200"><span class="text-[10px] text-slate-400">收入</span><p id="rep-income" class="text-emerald-600">0</p></div>
+              <div class="bg-white p-1.5 rounded border border-slate-200"><span class="text-[10px] text-slate-400">支出</span><p id="rep-expense" class="text-rose-600">0</p></div>
+              <div class="bg-white p-1.5 rounded border border-slate-200"><span class="text-[10px] text-slate-400">進貨</span><p id="rep-delivery" class="text-blue-600">0</p></div>
+            </div>
+            <div class="space-y-1">
+              <span class="font-bold text-slate-600 text-[11px]">各廠商進貨小計：</span>
+              <ul id="rep-supplier-breakdown" class="text-[11px] space-y-0.5"></ul>
+            </div>
+          </div>
+
+          <!-- 待核銷付款清單 -->
+          <div class="space-y-1.5 pt-2 border-t border-slate-100">
+            <span class="font-bold text-slate-700 text-xs">💵 待付款核銷明細：</span>
+            <div id="admin-data-list" class="space-y-2"></div>
+          </div>
         </div>
       </div>
+
     </section>
 
+  </main>
+
+
+  <!-- ==================== 彈窗元件 ==================== -->
+
+  <!-- 1. 護理長快速排班填空彈窗 -->
+  <div id="shift-edit-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-4 space-y-3 shadow-2xl border border-slate-100">
+      <div class="flex justify-between items-center border-b pb-2">
+        <div>
+          <h4 id="modal-date-title" class="font-bold text-slate-800 text-sm">排班代碼指派</h4>
+          <span id="modal-day-hint" class="text-[10px] text-indigo-600 font-semibold">早班 / 中班</span>
+        </div>
+        <button onclick="closeShiftEditModal()" class="text-slate-400 font-bold hover:text-slate-700">✕</button>
+      </div>
+
+      <!-- 早班指派區 -->
+      <div id="box-morning-shift" class="space-y-1">
+        <span class="font-bold text-xs text-amber-800 bg-amber-100 px-2 py-0.5 rounded">☀️ 早班出勤同仁</span>
+        <div id="morning-nurses-select" class="grid grid-cols-2 gap-1.5 pt-1 text-xs max-h-36 overflow-y-auto"></div>
+      </div>
+
+      <!-- 中班指派區 -->
+      <div id="box-afternoon-shift" class="space-y-1">
+        <span class="font-bold text-xs text-blue-800 bg-blue-100 px-2 py-0.5 rounded">🌤️ 中班出勤同仁 (週一三五)</span>
+        <div id="afternoon-nurses-select" class="grid grid-cols-2 gap-1.5 pt-1 text-xs max-h-36 overflow-y-auto"></div>
+      </div>
+
+      <div class="pt-2">
+        <button onclick="saveModalDaySchedule()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl text-xs shadow-sm">💾 儲存本日班表</button>
+      </div>
+    </div>
   </div>
 
-  <!-- 發票補登 Modal 彈窗 -->
-  <div id="invoice-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50 overflow-y-auto">
-    <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl my-auto">
-      <div class="flex justify-between items-center mb-3">
-        <h3 class="text-sm font-bold text-slate-800">📝 補登發票與金額</h3>
-        <button onclick="closeInvoiceModal()" class="text-slate-400 font-bold p-1">✕</button>
+  <!-- 2. 發票補登彈窗 -->
+  <div id="invoice-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-4 space-y-3 shadow-2xl border border-slate-100">
+      <div class="flex justify-between items-center border-b pb-2">
+        <h4 class="font-bold text-slate-800 text-sm">📝 補登發票與請款金額</h4>
+        <button onclick="closeInvoiceModal()" class="text-slate-400 font-bold hover:text-slate-700">✕</button>
       </div>
-      <div class="mb-3 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center space-y-2">
-        <div class="flex justify-between items-center text-[10px] text-slate-500 mb-1 px-1">
-          <span>📸 拍照對準發票左側 QR Code</span>
-          <span id="modal-ocr-status" class="font-bold text-emerald-700">就緒</span>
-        </div>
-        <label class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center cursor-pointer shadow-sm w-full">
-          📸 拍照整張發票辨識號碼與金額
-          <input type="file" id="modal-qr-file" accept="image/*" class="hidden" onchange="processInvoiceImage(this, 'modal-invoice-no', 'modal-amount', 'modal-ocr-status')">
-        </label>
-      </div>
-      <form id="modal-invoice-form" class="space-y-3">
+
+      <form id="modal-invoice-form" class="space-y-2 text-xs">
         <input type="hidden" id="modal-id">
+
         <div>
-          <label class="block text-xs font-bold text-slate-600 mb-1">發票號碼</label>
-          <input type="text" id="modal-invoice-no" placeholder="例：AB12345678" class="w-full p-2 border rounded-lg text-xs font-mono bg-white">
+          <label class="block text-slate-600 font-bold mb-1">發票拍照自動辨識 (選填)</label>
+          <input type="file" accept="image/*" capture="environment" onchange="processInvoiceImage(this, 'modal-invoice-no', 'modal-amount', 'modal-ocr-status')" class="w-full border rounded-lg p-1 bg-slate-50 border-slate-300">
+          <span id="modal-ocr-status" class="text-[10px] text-slate-400">就緒</span>
         </div>
+
         <div>
-          <label class="block text-xs font-bold text-slate-600 mb-1">發票實際總金額 (NT$)</label>
-          <input type="number" id="modal-amount" placeholder="0" class="w-full p-2 border rounded-lg text-xs" required>
+          <label class="block text-slate-600 font-bold mb-1">發票號碼 (10碼)</label>
+          <input type="text" id="modal-invoice-no" required placeholder="AB12345678" class="w-full border rounded-lg p-2 font-mono uppercase bg-slate-50 border-slate-300">
         </div>
+
         <div>
-          <label class="block text-xs font-bold text-slate-600 mb-1">預計付款到期日</label>
-          <input type="date" id="modal-due-date" class="w-full p-2 border rounded-lg text-xs" required>
+          <label class="block text-slate-600 font-bold mb-1">應付金額 (NT$)</label>
+          <input type="number" id="modal-amount" required placeholder="0" class="w-full border rounded-lg p-2 font-bold bg-slate-50 border-slate-300">
         </div>
-        <div class="flex gap-2 pt-2">
-          <button type="button" onclick="closeInvoiceModal()" class="flex-1 bg-slate-100 text-slate-600 font-bold py-2 rounded-xl text-xs">取消</button>
-          <button type="submit" id="modal-submit-btn" class="flex-1 bg-blue-600 text-white font-bold py-2 rounded-xl text-xs">儲存送出</button>
+
+        <div>
+          <label class="block text-slate-600 font-bold mb-1">預計付款到期日 (次月月底)</label>
+          <input type="date" id="modal-due-date" required class="w-full border rounded-lg p-2 font-bold bg-slate-50 border-slate-300">
         </div>
+
+        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-xl text-xs shadow-sm mt-2">
+          💾 儲存並歸入待付款
+        </button>
       </form>
     </div>
   </div>
 
- ⁠  <script src="config.js"></script>
+
+  <!-- ==================== 模組化 JS 引入順序 ==================== -->
+  <script src="config.js"></script>
   <script src="hr.js"></script>
   <script src="finance.js"></script>
   <script src="main.js"></script>
-</body>
-</html>
-
 </body>
 </html>
