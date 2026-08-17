@@ -18,7 +18,6 @@ const NATIONAL_HOLIDAYS_2026 = [
 
 // ==================== 頁籤切換與權限管制 ====================
 function switchHrTab(tab) {
-  // 管理權限：僅陳慧倪（護理長）與林和正（醫師）可操作全院排班整合
   const isAdminUser = (currentUser.displayName === '陳慧倪' || currentUser.displayName === '林和正' || currentUser.role === 'doctor');
   
   if (tab === 'scheduling' && !isAdminUser) {
@@ -42,7 +41,67 @@ function switchHrTab(tab) {
 function initHrDefaults() {
   const today = new Date();
   const schDate = document.getElementById('sch-date');
-  if (schDate) schDate.value = today.toISOString().split('T')[0];
+  if (schDate) {
+    schDate.value = today.toISOString().split('T')[0];
+    schDate.onchange = () => {
+      updateAdminShiftOptions();
+      checkShiftCompliance();
+    };
+  }
+}
+
+// 根據星期動態更新指定班別（一三五：早班/中班，二四六：早班，日：休診；不標示時間）
+function filterShiftsByDate(dateStr, selectElemId) {
+  const selectElem = document.getElementById(selectElemId);
+  if (!selectElem || !dateStr) return;
+
+  const dateObj = new Date(dateStr);
+  const dayOfWeek = dateObj.getDay(); // 0:日, 1:一, 2:二, 3:三, 4:四, 5:五, 6:六
+
+  selectElem.innerHTML = '';
+
+  if (dayOfWeek === 0) {
+    const opt = document.createElement('option');
+    opt.value = "";
+    opt.innerText = "週日固定休診";
+    selectElem.appendChild(opt);
+    return;
+  }
+
+  // 篩選允許的班別
+  let allowedShifts = [];
+  if (dayOfWeek === 1 || dayOfWeek === 3 || dayOfWeek === 5) {
+    // 星期一、三、五：早班、中班
+    allowedShifts = cachedShifts.filter(s => s.shift_name.includes('早') || s.shift_name.includes('中'));
+  } else {
+    // 星期二、四、六：只有早班
+    allowedShifts = cachedShifts.filter(s => s.shift_name.includes('早'));
+  }
+
+  // 若資料庫尚未設定對應班別，提供標準預設
+  if (allowedShifts.length === 0) {
+    allowedShifts = (dayOfWeek === 1 || dayOfWeek === 3 || dayOfWeek === 5) 
+      ? [{ id: 'morning', shift_name: '早班' }, { id: 'afternoon', shift_name: '中班' }]
+      : [{ id: 'morning', shift_name: '早班' }];
+  }
+
+  allowedShifts.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.id;
+    // 去除時間標示，純顯示班別名稱
+    opt.innerText = s.shift_name.replace(/\s*\(.*?\)/g, '').trim();
+    selectElem.appendChild(opt);
+  });
+}
+
+function updateAdminShiftOptions() {
+  const dateStr = document.getElementById('sch-date')?.value;
+  filterShiftsByDate(dateStr, 'sch-shift-select');
+}
+
+function updateRequestShiftOptions() {
+  const dateStr = document.getElementById('req-date')?.value;
+  filterShiftsByDate(dateStr, 'req-shift-select');
 }
 
 // ==================== 查詢個人班表 ====================
@@ -65,12 +124,13 @@ async function loadMySchedule() {
 
   container.innerHTML = '';
   data.forEach(s => {
-    const shift = s.clinic_shifts || { shift_name: '常規班', start_time: '08:00', end_time: '16:00' };
+    const rawShiftName = s.clinic_shifts?.shift_name || '常規班';
+    const shiftName = rawShiftName.replace(/\s*\(.*?\)/g, '').trim(); // 不標示時間
     const row = document.createElement('div');
     row.className = "flex justify-between items-center bg-white p-2.5 rounded-lg border border-slate-200 text-xs";
     row.innerHTML = `
       <span class="font-bold text-slate-700">${s.date}</span>
-      <span class="bg-indigo-100 text-indigo-800 font-bold px-2 py-0.5 rounded text-[11px]">${shift.shift_name} (${shift.start_time.substring(0,5)} ~ ${shift.end_time.substring(0,5)})</span>
+      <span class="bg-indigo-100 text-indigo-800 font-bold px-2.5 py-0.5 rounded text-[11px]">${shiftName}</span>
     `;
     container.appendChild(row);
   });
@@ -84,6 +144,11 @@ async function initRequestPage() {
   const reqMonth = document.getElementById('req-target-month');
   if (reqMonth) reqMonth.value = nextMonthStr;
   updateRequestMonthDays();
+
+  const reqDate = document.getElementById('req-date');
+  if (reqDate) {
+    reqDate.onchange = updateRequestShiftOptions;
+  }
 
   const currentDay = today.getDate();
   const deadlineTag = document.getElementById('request-deadline-tag');
@@ -113,17 +178,8 @@ async function initRequestPage() {
   }
 
   const { data: shifts } = await supabaseClient.from('clinic_shifts').select('*');
-  const shiftSelect = document.getElementById('req-shift-select');
-  if (shiftSelect) {
-    shiftSelect.innerHTML = '';
-    (shifts || []).forEach(s => {
-      const opt = document.createElement('option');
-      opt.value = s.id;
-      opt.innerText = `${s.shift_name} (${s.start_time.substring(0,5)} ~ ${s.end_time.substring(0,5)})`;
-      shiftSelect.appendChild(opt);
-    });
-  }
-
+  cachedShifts = shifts || [];
+  updateRequestShiftOptions();
   loadMyRequests();
 }
 
@@ -145,15 +201,15 @@ function toggleRequestShiftSelect() {
     shiftGroup.classList.add('hidden');
   } else {
     shiftGroup.classList.remove('hidden');
+    updateRequestShiftOptions();
   }
 }
 
-// 預約提交與規則校驗引擎
+// 預約提交與規則校驗
 document.getElementById('schedule-request-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!currentUser.empId) await syncEmployeeRecord();
 
-  // 盧明伶不參與常規排班
   if (currentUser.displayName === '盧明伶') {
     const isSpecial = confirm('盧明伶護理師固定負責門診藥事與週六加班。\n確認登記此項目為個人特休嗎？');
     if (!isSpecial) return;
@@ -168,13 +224,11 @@ document.getElementById('schedule-request-form')?.addEventListener('submit', asy
   const dateObj = new Date(reqDate);
   const dayOfWeek = dateObj.getDay();
 
-  // 基礎營運規則：週日固定休診
   if (dayOfWeek === 0) {
-    alert('⚠️ 愛欣診所每週日固定休診，無須預約休假！');
+    alert('⚠️ 愛欣診所每週日固定休診，無須預約！');
     return;
   }
 
-  // 護理師排休管制（醫師林和正與護理長陳慧倪不受此限）
   const isRegularNurse = (currentUser.displayName !== '林和正' && currentUser.displayName !== '陳慧倪' && currentUser.displayName !== '盧明伶' && currentUser.role !== 'doctor');
 
   if (reqType === 'off' && isRegularNurse) {
@@ -245,7 +299,9 @@ async function loadMyRequests() {
 
   container.innerHTML = '';
   data.forEach(r => {
-    const shiftText = r.request_type === 'off' ? '🏖️ 預約休假' : `⭐ 希望班別: ${r.clinic_shifts?.shift_name || '上班'}`;
+    const rawShiftName = r.clinic_shifts?.shift_name || '上班';
+    const shiftName = rawShiftName.replace(/\s*\(.*?\)/g, '').trim();
+    const shiftText = r.request_type === 'off' ? '🏖️ 預約休假' : `⭐ 希望班別: ${shiftName}`;
     const div = document.createElement('div');
     div.className = "flex justify-between items-center bg-white p-2 rounded-lg border border-slate-200";
     div.innerHTML = `
@@ -266,11 +322,10 @@ async function deleteRequest(id) {
   loadMyRequests();
 }
 
-// ==================== 國定假日 9 大節日抽籤演算法 (排除醫師與特殊職務) ====================
+// ==================== 國定假日 9 大節日抽籤 ====================
 async function runNationalHolidayLottery() {
   if (!confirm('確定由「一般護理師」進行全年度 9 大國定假日抽籤輪休？（每人均休一次後才重啟下一輪）')) return;
 
-  // 嚴格排除：林和正醫師、陳慧倪護理長、盧明伶藥事
   const { data: regularNurses } = await supabaseClient.from('clinic_employees')
     .select('*')
     .eq('is_active', true)
@@ -305,7 +360,7 @@ async function runNationalHolidayLottery() {
   }
 }
 
-// ==================== 護理長排班管理與合規檢查 ====================
+// ==================== 護理長排班管理 ====================
 async function loadScheduleAdminData() {
   const { data: empData } = await supabaseClient.from('clinic_employees').select('*').eq('is_active', true);
   cachedEmployees = empData || [];
@@ -318,9 +373,13 @@ async function loadScheduleAdminData() {
     empSelect.innerHTML = '';
     cachedEmployees.forEach(e => {
       let roleLabel = '護理師';
-      if (e.name === '林和正' || e.role === 'doctor') roleLabel = '醫師';
-      else if (e.name === '陳慧倪') roleLabel = '護理長';
-      else if (e.name === '盧明伶') roleLabel = '門診藥事';
+      if (e.name === '林和正' || e.role === 'doctor') {
+        roleLabel = '醫師'; // 修正林和正身份為醫師
+      } else if (e.name === '陳慧倪') {
+        roleLabel = '護理長';
+      } else if (e.name === '盧明伶') {
+        roleLabel = '門診藥事';
+      }
 
       const deductionText = (e.sat_off_deduction > 0 && roleLabel === '護理師') ? ` (遲到扣休週六 ${e.sat_off_deduction}次)` : '';
       const opt = document.createElement('option');
@@ -330,16 +389,7 @@ async function loadScheduleAdminData() {
     });
   }
 
-  const shiftSelect = document.getElementById('sch-shift-select');
-  if (shiftSelect) {
-    shiftSelect.innerHTML = '';
-    cachedShifts.forEach(s => {
-      const opt = document.createElement('option');
-      opt.value = s.id;
-      opt.innerText = `${s.shift_name} (${s.start_time.substring(0,5)} ~ ${s.end_time.substring(0,5)})`;
-      shiftSelect.appendChild(opt);
-    });
-  }
+  updateAdminShiftOptions();
 
   const { data: allSch } = await supabaseClient.from('clinic_schedules')
     .select('*, clinic_employees(*), clinic_shifts(*)')
@@ -361,7 +411,8 @@ function renderAllScheduleList() {
   schList.innerHTML = '';
   cachedAllSchedules.forEach(s => {
     const empName = s.clinic_employees?.name || '未指定';
-    const shiftName = s.clinic_shifts?.shift_name || '常規班';
+    const rawShiftName = s.clinic_shifts?.shift_name || '常規班';
+    const shiftName = rawShiftName.replace(/\s*\(.*?\)/g, '').trim(); // 不標示時間
     const div = document.createElement('div');
     div.className = "flex justify-between items-center bg-white p-2 rounded-lg border border-slate-200";
     div.innerHTML = `
@@ -392,14 +443,18 @@ function checkShiftCompliance() {
 
   if (!dateStr || !empId || !shiftId) return;
 
-  const targetShift = cachedShifts.find(s => s.id === shiftId);
   const targetEmp = cachedEmployees.find(e => e.id === empId);
   const empSchedules = cachedAllSchedules.filter(s => s.employee_id === empId);
-
   const curDate = new Date(dateStr);
   const dayOfWeek = curDate.getDay();
 
-  // 護理長陳慧倪固定休週末提醒
+  if (dayOfWeek === 0) {
+    if (warningDiv) {
+      warningDiv.innerText = `⚠️ 提醒：診所每週日固定休診。`;
+      warningDiv.classList.remove('hidden');
+    }
+  }
+
   if (targetEmp?.name === '陳慧倪' && (dayOfWeek === 0 || dayOfWeek === 6)) {
     if (warningDiv) {
       warningDiv.innerText = `⚠️ 提醒：護理長陳慧倪原則固定休週末（週六/週日）。`;
@@ -407,15 +462,6 @@ function checkShiftCompliance() {
     }
   }
 
-  // 週二僅有早班提示
-  if (dayOfWeek === 2 && targetShift?.shift_name?.includes('中班')) {
-    if (warningDiv) {
-      warningDiv.innerText = `⚠️ 提醒：愛欣診所週二僅有早班，請確認中班排定之必要性。`;
-      warningDiv.classList.remove('hidden');
-    }
-  }
-
-  // 四週變形工時：不得連續工作超過 6 日
   let consecutiveDays = 0;
   for (let i = 1; i <= 6; i++) {
     const prevDate = new Date(curDate);
@@ -436,40 +482,6 @@ function checkShiftCompliance() {
     if (saveBtn) {
       saveBtn.disabled = true;
       saveBtn.className = "w-full bg-slate-400 text-white font-bold py-2.5 rounded-xl text-xs cursor-not-allowed";
-    }
-    return;
-  }
-
-  // 班別間隔檢核
-  const prevDay = new Date(curDate);
-  prevDay.setDate(prevDay.getDate() - 1);
-  const prevDayStr = prevDay.toISOString().split('T')[0];
-  const prevSchedule = empSchedules.find(s => s.date === prevDayStr);
-
-  if (prevSchedule && prevSchedule.clinic_shifts && targetShift) {
-    const prevEnd = prevSchedule.clinic_shifts.end_time;
-    const curStart = targetShift.start_time;
-
-    const [ph, pm] = prevEnd.split(':').map(Number);
-    const [ch, cm] = curStart.split(':').map(Number);
-    let intervalHours = (ch + 24 - ph) + (cm - pm) / 60;
-    if (intervalHours >= 24) intervalHours -= 24;
-
-    if (intervalHours < 8) {
-      if (warningDiv) {
-        warningDiv.innerText = `🚨 強制違規：與前一日班別間隔僅 ${intervalHours.toFixed(1)} 小時，小於法定下限 8 小時，禁止排班！`;
-        warningDiv.classList.remove('hidden');
-      }
-      if (saveBtn) {
-        saveBtn.disabled = true;
-        saveBtn.className = "w-full bg-slate-400 text-white font-bold py-2.5 rounded-xl text-xs cursor-not-allowed";
-      }
-    } else if (intervalHours < 11) {
-      if (specialBox) specialBox.classList.remove('hidden');
-      if (warningDiv) {
-        warningDiv.innerText = `⚠️ 提醒：與前日班別間隔為 ${intervalHours.toFixed(1)} 小時（小於11小時），需勾選並註記「緊急透析/教育訓練」事由。`;
-        warningDiv.classList.remove('hidden');
-      }
     }
   }
 }
