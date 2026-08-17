@@ -162,7 +162,7 @@ async function syncEmployeeRecord() {
     console.warn('同步員工資料略過:', e);
   }
 }
-
+// 打卡邏輯（移除不存在的 user_name 欄位）
 async function punchAttendance(type) {
   if (!currentGps.lat || !currentGps.lng) {
     refreshGpsLocation();
@@ -174,14 +174,63 @@ async function punchAttendance(type) {
 
   try {
     const { error } = await supabaseClient.from('clinic_attendance').insert([{
-      employee_id: currentUser.empId || null,
-      user_name: currentUser.displayName,
+      employee_id: currentUser.empId,
       punch_type: type,
       latitude: currentGps.lat,
       longitude: currentGps.lng,
-      is_valid_location: true,
-      created_at: new Date().toISOString()
+      is_valid_location: true
     }]);
+
+    if (error) throw error;
+
+    alert(`✅ ${type === 'in' ? '上班' : '下班'}打卡成功！\n時間：${new Date().toLocaleTimeString('zh-TW')}`);
+    await loadTodayAttendance();
+  } catch (err) {
+    alert('打卡失敗：' + err.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// 載入當日打卡狀態 (台灣時區)
+async function loadTodayAttendance() {
+  const summary = document.getElementById('today-punch-summary');
+  if (!summary) return;
+
+  try {
+    if (!currentUser.empId) await syncEmployeeRecord();
+    const { startOfDay, endOfDay } = getTaipeiDayRange();
+    
+    let query = supabaseClient.from('clinic_attendance')
+      .select('*')
+      .gte('created_at', startOfDay)
+      .lte('created_at', endOfDay)
+      .order('created_at', { ascending: true });
+
+    if (currentUser.empId) {
+      query = query.eq('employee_id', currentUser.empId);
+    }
+
+    const { data, error } = await query;
+
+    if (error || !data || data.length === 0) {
+      summary.innerText = "今日出勤：尚未打卡";
+      return;
+    }
+
+    const last = data[data.length - 1];
+    const timeStr = new Date(last.created_at || last.punch_time).toLocaleTimeString('zh-TW', {
+      timeZone: 'Asia/Taipei',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    summary.innerHTML = `今日已打卡 <strong>${data.length}</strong> 次 (最後：${last.punch_type === 'in' ? '上班' : '下班'} ${timeStr})`;
+  } catch (e) {
+    summary.innerText = "今日出勤：尚未打卡";
+  }
+}
+
+asyn
 
     if (error) throw error;
 
