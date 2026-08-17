@@ -6,7 +6,7 @@ let cachedMonthLotteries = [];
 let editingDate = null;
 let userReqDate = null;
 
-// 3 大核心班別
+// 3 大核心班別 (已移除開門小白班)
 const SHIFT_TYPES = ['未排班', '開門白班', '正常白班', '正常晚班'];
 
 // 5 種標準工時 (小時)
@@ -183,7 +183,7 @@ function initHrDefaults() {
 function isFixedStaff(name) { return !!FIXED_STAFF_ROLES[name]; }
 function isDoctor(name, role) { return name === '林和正' || role === 'doctor'; }
 function isDialysisNurse(name, role) { return !isFixedStaff(name) && !isDoctor(name, role); }
-// ==================== 1. 「我的班表」月曆與法定假期餘額結算 (已移除週休與例休) ====================
+// ==================== 1. 「我的班表」月曆與法定假期餘額結算 (已徹底移除週休與例休) ====================
 async function loadMySchedule() {
   if (!currentUser.empId) await syncEmployeeRecord();
   initHrDefaults();
@@ -247,7 +247,7 @@ async function loadMySchedule() {
   document.getElementById('stat-hours-offset-days').innerText = `${offsetSign}${hoursOffsetDays.toFixed(1)}日 (${netHoursDiff.toFixed(1)}h)`;
   document.getElementById('my-total-hours').innerText = `${monthWorkHours} 小時`;
 
-  // 4. 總剩餘假期結算 = 特休剩餘 + 國定假剩餘 + 工時折算
+  // 4. 總剩餘假期結算 = 特休剩餘 + 國定假剩餘 + 工時折算 (不計週休)
   const remainingSpecial = Math.max(0, totalSpecialLeave - usedSpecialLeave);
   const remainingNational = Math.max(0, totalNational - usedNational);
   const remainingTotal = (remainingSpecial + remainingNational + hoursOffsetDays);
