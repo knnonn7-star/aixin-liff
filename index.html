@@ -113,6 +113,7 @@
 
 
     <!-- ==================== 2. 人事管理系統 ==================== -->
+
     <section id="sec-hr" class="hidden space-y-4">
       
       <!-- HR 內部頁籤 -->
@@ -122,69 +123,61 @@
         <button id="hr-tab-scheduling" onclick="switchHrTab('scheduling')" class="py-2 rounded-lg hover:text-slate-900 transition">👩‍⚕️ 護理長排班</button>
       </div>
 
-      <!-- 分頁 1: 我的班表 -->
+      <!-- 分頁 1: 我的班表 (月曆視圖) -->
       <div id="hr-sec-myschedule" class="space-y-3">
-        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-          <h2 class="font-bold text-slate-800 text-xs flex justify-between items-center">
-            <span>📅 當月個人排定班表</span>
-            <button onclick="loadMySchedule()" class="text-indigo-600 font-normal hover:underline text-[11px]">🔄 重新整理</button>
-          </h2>
-          <div id="my-schedule-list" class="space-y-2">
-            <!-- 動態載入班表 -->
+        <div class="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+          <div class="flex justify-between items-center pb-1 border-b border-slate-100">
+            <div>
+              <h2 class="font-bold text-slate-800 text-xs">📅 我的個人月曆班表</h2>
+              <p class="text-[10px] text-slate-400">綠色/黃色/藍色標示當日出勤狀態</p>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <input type="month" id="my-sch-month" onchange="loadMySchedule()" class="border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold text-indigo-900 bg-indigo-50">
+            </div>
+          </div>
+
+          <!-- 月曆本體 -->
+          <div class="grid grid-cols-7 gap-1 text-center font-bold text-[11px] text-slate-600">
+            <span class="text-rose-500 py-0.5">週日</span>
+            <span class="py-0.5">週一</span>
+            <span class="py-0.5">週二</span>
+            <span class="py-0.5">週三</span>
+            <span class="py-0.5">週四</span>
+            <span class="py-0.5">週五</span>
+            <span class="text-indigo-600 py-0.5">週六</span>
+          </div>
+          <div id="my-calendar-grid" class="grid grid-cols-7 gap-1">
+            <!-- 動態產生個人班表格子 -->
           </div>
         </div>
       </div>
 
-      <!-- 分頁 2: 預約排班 (15號截止) -->
+      <!-- 分頁 2: 預約排班 (月曆點選視圖) -->
       <div id="hr-sec-request" class="hidden space-y-3">
-        <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-          <div class="flex justify-between items-center">
-            <h2 class="font-bold text-slate-800 text-xs">📝 下月份預約排班 / 休假</h2>
-            <span id="request-deadline-tag" class="text-[10px] px-2 py-0.5 rounded font-bold">載入中...</span>
-          </div>
-
-          <form id="schedule-request-form" class="space-y-2.5 text-xs">
-            <div>
-              <label class="block text-slate-600 font-bold mb-1">目標預約月份</label>
-              <input type="month" id="req-target-month" onchange="updateRequestMonthDays()" class="w-full border rounded-xl p-2 font-bold bg-slate-50 border-slate-300">
-            </div>
-
-            <div>
-              <label class="block text-slate-600 font-bold mb-1">選擇預約日期</label>
-              <input type="date" id="req-date" required class="w-full border rounded-xl p-2 font-bold bg-slate-50 border-slate-300">
-            </div>
-
-            <div>
-              <label class="block text-slate-600 font-bold mb-1">預約類型</label>
-              <select id="req-type" onchange="toggleRequestShiftSelect()" class="w-full border rounded-xl p-2 font-bold bg-slate-50 border-slate-300">
-                <option value="off">🏖️ 預約休假</option>
-                <option value="shift">⭐ 希望排定班別</option>
-              </select>
-            </div>
-
-            <div id="req-shift-group" class="hidden">
-              <label class="block text-slate-600 font-bold mb-1">指定班別</label>
-              <select id="req-shift-select" class="w-full border rounded-xl p-2 font-bold bg-slate-50 border-slate-300">
-                <!-- 動態注入早/中班 -->
-              </select>
-            </div>
-
-            <div>
-              <label class="block text-slate-600 font-bold mb-1">事由 / 備註說明 (選填)</label>
-              <input type="text" id="req-reason" placeholder="例如：進修、家庭事宜" class="w-full border rounded-xl p-2 bg-slate-50 border-slate-300">
-            </div>
-
-            <button type="submit" id="btn-submit-request" class="w-full bg-indigo-600 text-white font-bold py-2.5 rounded-xl shadow-sm text-xs">
-              📤 送出排班/休假預約
-            </button>
-          </form>
-        </div>
-
-        <!-- 已登記的預約清單 -->
         <div class="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2">
-          <h3 class="font-bold text-slate-700 text-xs">📋 我的下月預約清單</h3>
-          <div id="my-request-list" class="space-y-1.5 text-xs">
-            <!-- 動態載入 -->
+          <div class="flex justify-between items-center pb-1 border-b border-slate-100">
+            <div>
+              <h2 class="font-bold text-slate-800 text-xs">📝 下月份預約排班 / 特休</h2>
+              <span id="request-deadline-tag" class="text-[10px] px-2 py-0.5 rounded font-bold">載入中...</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <input type="month" id="req-target-month" onchange="loadRequestCalendar()" class="border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold text-indigo-900 bg-indigo-50">
+            </div>
+          </div>
+          <p class="text-[11px] text-slate-500">💡 點擊月曆格子即可直接「登記休假/指定班別」或取消：</p>
+
+          <!-- 預約排班月曆 -->
+          <div class="grid grid-cols-7 gap-1 text-center font-bold text-[11px] text-slate-600">
+            <span class="text-rose-500 py-0.5">週日</span>
+            <span class="py-0.5">週一</span>
+            <span class="py-0.5">週二</span>
+            <span class="py-0.5">週三</span>
+            <span class="py-0.5">週四</span>
+            <span class="py-0.5">週五</span>
+            <span class="text-indigo-600 py-0.5">週六</span>
+          </div>
+          <div id="req-calendar-grid" class="grid grid-cols-7 gap-1">
+            <!-- 動態產生預約排表格子 -->
           </div>
         </div>
       </div>
@@ -194,7 +187,7 @@
         <div class="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
           <div>
             <h3 class="font-bold text-slate-800 text-xs">📅 護理長月曆排班</h3>
-            <p class="text-[10px] text-slate-500">週日休診；週一三五有早/中班，週二四六僅早班</p>
+            <p class="text-[10px] text-slate-500">週日休診；週一三五早/中班，週二四六早班</p>
           </div>
           <div class="flex items-center gap-2">
             <input type="month" id="admin-sch-month" onchange="loadScheduleCalendar()" class="border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold text-indigo-900 bg-indigo-50">
@@ -202,15 +195,11 @@
           </div>
         </div>
 
-        <!-- 護理師代碼速查標籤 -->
         <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs">
           <span class="font-bold text-slate-700">👩‍⚕️ 護理師代碼名冊：</span>
-          <div id="nurse-code-tags" class="flex flex-wrap gap-1.5 mt-1.5">
-            <!-- 動態注入代碼標籤 -->
-          </div>
+          <div id="nurse-code-tags" class="flex flex-wrap gap-1.5 mt-1.5"></div>
         </div>
 
-        <!-- 月曆主體網格 -->
         <div class="bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
           <div class="grid grid-cols-7 gap-1 text-center font-bold text-[11px] text-slate-600 mb-1">
             <span class="text-rose-500 py-1">週日</span>
@@ -221,11 +210,46 @@
             <span class="py-1">週五</span>
             <span class="text-indigo-600 py-1">週六</span>
           </div>
-          <div id="calendar-grid" class="grid grid-cols-7 gap-1">
-            <!-- 動態注入 1 ~ 31 日格子 -->
-          </div>
+          <div id="calendar-grid" class="grid grid-cols-7 gap-1"></div>
         </div>
       </div>
+
+    </section>
+
+  <!-- ==================== 快速預約排班彈窗 (護理師點擊格子時彈出) ==================== -->
+  <div id="user-req-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3">
+    <div class="bg-white rounded-2xl max-w-xs w-full p-4 space-y-3 shadow-2xl border border-slate-100 text-xs">
+      <div class="flex justify-between items-center border-b pb-2">
+        <h4 id="user-req-date-title" class="font-bold text-slate-800 text-sm">📅 預約排班</h4>
+        <button onclick="closeUserReqModal()" class="text-slate-400 font-bold hover:text-slate-700">✕</button>
+      </div>
+
+      <div class="space-y-2">
+        <label class="block font-bold text-slate-600">選擇希望安排：</label>
+        <div class="grid grid-cols-1 gap-1.5" id="user-req-options">
+          <label class="flex items-center gap-2 p-2 rounded-xl border border-rose-200 bg-rose-50/60 font-bold text-rose-800 cursor-pointer">
+            <input type="radio" name="user-req-type" value="off" checked> 🏖️ 預約休假 / 特休
+          </label>
+          <label id="user-req-morning-opt" class="flex items-center gap-2 p-2 rounded-xl border border-amber-200 bg-amber-50/60 font-bold text-amber-800 cursor-pointer">
+            <input type="radio" name="user-req-type" value="morning"> ☀️ 指定早班
+          </label>
+          <label id="user-req-afternoon-opt" class="flex items-center gap-2 p-2 rounded-xl border border-blue-200 bg-blue-50/60 font-bold text-blue-800 cursor-pointer">
+            <input type="radio" name="user-req-type" value="afternoon"> 🌤️ 指定中班 (週一三五)
+          </label>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-600 mb-0.5">備註說明 (選填)：</label>
+          <input type="text" id="user-req-reason" placeholder="例如：進修、家庭事宜" class="w-full border rounded-lg p-1.5 bg-slate-50 border-slate-300">
+        </div>
+      </div>
+
+      <div class="pt-2 flex gap-2">
+        <button onclick="deleteCurrentDayRequest()" id="btn-delete-req" class="hidden flex-1 bg-rose-100 text-rose-700 font-bold py-2 rounded-xl hover:bg-rose-200">取消登記</button>
+        <button onclick="submitUserDayRequest()" class="flex-1 bg-indigo-600 text-white font-bold py-2 rounded-xl hover:bg-indigo-700 shadow-sm">確認送出</button>
+      </div>
+    </div>
+  </div>
 
     </section>
 
