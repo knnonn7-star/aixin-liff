@@ -32,7 +32,7 @@
     @media print {
       @page {
         size: A4 landscape;
-        margin: 5mm;
+        margin: 4mm;
       }
       body * {
         visibility: hidden !important;
@@ -152,7 +152,7 @@
         <button id="hr-tab-scheduling" onclick="switchHrTab('scheduling')" class="py-2 rounded-lg hover:text-slate-900 transition">👩‍⚕️ 護理長排班</button>
       </div>
 
-      <!-- 分頁 1: 我的班表 -->
+      <!-- 分頁 1: 我的班表 (已刪除週休與例休，精簡為 3 欄核心統計) -->
       <div id="hr-sec-myschedule" class="space-y-3">
         <div class="bg-gradient-to-br from-indigo-900 via-indigo-800 to-slate-900 text-white p-3.5 rounded-2xl shadow-md space-y-2.5">
           <div class="flex justify-between items-center border-b border-indigo-700/60 pb-1.5">
@@ -166,20 +166,16 @@
             </div>
           </div>
 
-          <div class="grid grid-cols-4 gap-1.5 text-center text-[10px]">
-            <div class="bg-white/10 p-1.5 rounded-xl backdrop-blur-xs">
+          <div class="grid grid-cols-3 gap-1.5 text-center text-[10px]">
+            <div class="bg-white/10 p-2 rounded-xl backdrop-blur-xs">
               <span class="text-indigo-200 block">法定特休</span>
               <span id="stat-special-leave" class="font-bold text-white text-xs">0 / 0日</span>
             </div>
-            <div class="bg-white/10 p-1.5 rounded-xl backdrop-blur-xs">
+            <div class="bg-white/10 p-2 rounded-xl backdrop-blur-xs">
               <span class="text-indigo-200 block">政府國定假</span>
               <span id="stat-national-leave" class="font-bold text-white text-xs">0 / 12日</span>
             </div>
-            <div class="bg-white/10 p-1.5 rounded-xl backdrop-blur-xs">
-              <span class="text-indigo-200 block">週休與例休</span>
-              <span id="stat-weekend-leave" class="font-bold text-white text-xs">0 / 104日</span>
-            </div>
-            <div class="bg-white/10 p-1.5 rounded-xl backdrop-blur-xs">
+            <div class="bg-white/10 p-2 rounded-xl backdrop-blur-xs">
               <span class="text-indigo-200 block">工時增減折算</span>
               <span id="stat-hours-offset-days" class="font-bold text-amber-300 text-xs">+0.0日</span>
             </div>
@@ -240,7 +236,7 @@
         <div class="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm no-print">
           <div>
             <h3 class="font-bold text-slate-800 text-xs">👩‍⚕️ 護理長排班中心 (陳慧倪)</h3>
-            <p class="text-[10px] text-slate-500">3大班別設定・整月時數統計・支援A4列印</p>
+            <p class="text-[10px] text-slate-500">3大班別設定・整月時數統計・支援A4月曆列印</p>
           </div>
           <div class="flex items-center gap-1.5">
             <input type="month" id="admin-sch-month" onchange="loadScheduleCalendar()" class="border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold text-indigo-900 bg-indigo-50">
@@ -274,8 +270,6 @@
       </div>
 
     </section>
-
-
     <!-- ==================== 3. 帳務管理系統 ==================== -->
     <section id="sec-finance" class="hidden space-y-4 no-print">
       
@@ -444,7 +438,6 @@
   <div id="a4-print-modal" class="hidden fixed inset-0 bg-slate-900/80 z-50 overflow-y-auto p-2 sm:p-4 flex flex-col items-center">
     <div class="w-full max-w-5xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col my-auto border border-slate-300">
       
-      <!-- 控制列 (列印時自動隱藏) -->
       <div class="bg-slate-800 text-white p-3 flex justify-between items-center no-print">
         <div class="flex items-center space-x-2">
           <span class="text-lg">🖨️</span>
@@ -463,10 +456,7 @@
         </div>
       </div>
 
-      <!-- A4 橫向列印本體內容容器 -->
-      <div id="a4-printable-content" class="p-4 bg-white overflow-x-auto">
-        <!-- 動態產生高密度 A4 橫向表格 -->
-      </div>
+      <div id="a4-printable-content" class="p-4 bg-white overflow-x-auto"></div>
     </div>
   </div>
 
