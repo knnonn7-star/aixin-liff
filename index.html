@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   
+  <!-- 強制禁止瀏覽器與 LINE 快取此 HTML 頁面 -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+
   <title>愛欣診所管理系統</title>
   <meta property="og:title" content="愛欣診所管理系統">
   <meta property="og:description" content="點擊進入系統">
@@ -152,7 +157,7 @@
         <button id="hr-tab-scheduling" onclick="switchHrTab('scheduling')" class="py-2 rounded-lg hover:text-slate-900 transition">👩‍⚕️ 護理長排班</button>
       </div>
 
-      <!-- 分頁 1: 我的班表 (已徹底刪除週休與例休欄位，維持 3 欄簡潔設計) -->
+      <!-- 分頁 1: 我的班表 -->
       <div id="hr-sec-myschedule" class="space-y-3">
         <div class="bg-gradient-to-br from-indigo-900 via-indigo-800 to-slate-900 text-white p-3.5 rounded-2xl shadow-md space-y-2.5">
           <div class="flex justify-between items-center border-b border-indigo-700/60 pb-1.5">
@@ -552,17 +557,10 @@
   </div>
 
 
-  <!-- ==================== 模組化 JS 引入順序 ==================== -->
-  <!-- 1. 全域設定與 Supabase 初始化 -->
-  <script src="config.js?v=20260818_1"></script>
-  
-  <!-- 2. 人事排班與 A4 橫向列印模組 -->
-  <script src="hr.js?v=20260818_1"></script>
-  
-  <!-- 3. 衛材進貨、發票 OCR 與財務月報模組 -->
-  <script src="finance.js?v=20260818_1"></script>
-  
-  <!-- 4. 主程式、GPS 定位與 LIFF 生命週期（負責觸發 init） -->
-  <script src="main.js?v=20260818_1"></script>
+  <!-- ==================== 模組化 JS 引入 (已更新為最新防快取版號) ==================== -->
+  <script src="config.js?v=20260818_0915"></script>
+  <script src="hr.js?v=20260818_0915"></script>
+  <script src="finance.js?v=20260818_0915"></script>
+  <script src="main.js?v=20260818_0915"></script>
 </body>
 </html>
