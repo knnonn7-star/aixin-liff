@@ -137,18 +137,27 @@ function isFixedStaff(name) { return !!FIXED_STAFF_ROLES[name]; }
 function isDoctor(name, role) { return name === '林和正' || role === 'doctor'; }
 function isDialysisNurse(name, role) { return !isFixedStaff(name) && !isDoctor(name, role); }
 
+// 最高管理者判定（林和正、陳慧倪、admin）
+function isSuperAdmin() {
+  return (
+    currentUser.role === 'admin' ||
+    currentUser.role === 'doctor' ||
+    currentUser.displayName === '林和正' ||
+    currentUser.displayName === '陳慧倪' ||
+    currentUser.displayName === '陳惠倪'
+  );
+}
+
 function switchHrTab(tab) {
-  const isAdminUser = (currentUser.displayName === '陳慧倪' || currentUser.displayName === '陳惠倪' || currentUser.displayName === '林和正' || currentUser.role === 'doctor');
-  
-  if (tab === 'scheduling' && !isAdminUser) {
-    alert('🔒 權限提示：排班月曆之編排與發布僅限護理長（陳慧倪）與醫師操作。');
+  if (tab === 'scheduling' && !isSuperAdmin()) {
+    alert('🔒 權限提示：排班月曆之編排僅限管理者與護理長操作。');
     return;
   }
 
   ['myschedule', 'request', 'scheduling'].forEach(t => {
     document.getElementById(`hr-sec-${t}`)?.classList.add('hidden');
     const tabBtn = document.getElementById(`hr-tab-${t}`);
-    if (tabBtn) tabBtn.className = "py-2 rounded-lg hover:text-slate-900 transition";
+    if (tabBtn) tabBtn.className = "py-2 rounded-lg hover:text-slate-900 transition text-slate-600";
   });
   document.getElementById(`hr-sec-${tab}`)?.classList.remove('hidden');
   const activeTab = document.getElementById(`hr-tab-${tab}`);
@@ -307,18 +316,20 @@ async function initRequestPage() {
   const today = new Date();
   const currentDay = today.getDate();
   const deadlineTag = document.getElementById('request-deadline-tag');
-  const isAdminUser = (currentUser.displayName === '陳慧倪' || currentUser.displayName === '陳惠倪' || currentUser.displayName === '林和正' || currentUser.role === 'doctor');
   const isFixed = isFixedStaff(currentUser.displayName);
 
   if (deadlineTag) {
-    if (isFixed) {
+    if (isSuperAdmin()) {
+      deadlineTag.innerText = "👑 最高管理者模式：可自由排休與測試";
+      deadlineTag.className = "bg-amber-100 text-amber-800 text-[10px] px-2 py-0.5 rounded font-bold border border-amber-300";
+    } else if (isFixed) {
       deadlineTag.innerText = "🌿 常日班同仁：特休/年休預約";
       deadlineTag.className = "bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded font-bold";
-    } else if (currentDay > 15 && !isAdminUser) {
-      deadlineTag.innerText = "⚠️ 預約已於 15 號截止 (護理長排班中)";
+    } else if (currentDay > 15) {
+      deadlineTag.innerText = "⚠️ 預約已於 15 號截止 (排班審核中)";
       deadlineTag.className = "bg-rose-100 text-rose-800 text-[10px] px-2 py-0.5 rounded font-bold";
     } else {
-      deadlineTag.innerText = currentDay <= 15 ? `距離 15 號截止剩 ${15 - currentDay} 天` : `管理職特別編輯模式`;
+      deadlineTag.innerText = `距離 15 號截止剩 ${15 - currentDay} 天`;
       deadlineTag.className = "bg-indigo-200 text-indigo-800 text-[10px] px-2 py-0.5 rounded font-bold";
     }
   }
@@ -413,10 +424,10 @@ async function loadRequestCalendar() {
 
 function openUserReqModal(dateStr, dayOfWeek, existingReq, holiday) {
   const today = new Date();
-  const isAdminUser = (currentUser.displayName === '陳慧倪' || currentUser.displayName === '陳惠倪' || currentUser.displayName === '林和正' || currentUser.role === 'doctor');
   const isFixed = isFixedStaff(currentUser.displayName);
 
-  if (today.getDate() > 15 && !isAdminUser && !isFixed) {
+  // 一般人員 15 號後截止，管理者與常日班不受限
+  if (today.getDate() > 15 && !isSuperAdmin() && !isFixed) {
     alert('⚠️ 預約已於 15 號截止，目前為護理長排班期。若有異動需求請直接聯繫護理長陳慧倪。');
     return;
   }
@@ -453,39 +464,59 @@ function closeUserReqModal() {
   userReqDate = null;
 }
 
+// 支援所有人（含管理者/醫師、常日班）寫入排休
 async function submitUserDayRequest() {
-  if (!userReqDate) return;
+  if (!userReqDate) {
+    alert('請先選擇欲預約的日期！');
+    return;
+  }
   const client = getHrSupabase();
-  if (!client) return;
+  if (!client) {
+    alert('資料庫連線中，請稍候重試！');
+    return;
+  }
 
+  const userId = currentUser.lineUserId;
+  const userName = currentUser.displayName || '診所人員';
+  const targetMonth = document.getElementById('req-target-month')?.value || userReqDate.substring(0, 7);
   const selectedType = document.querySelector('input[name="user-req-type"]:checked')?.value || 'off';
   const reason = document.getElementById('user-req-reason')?.value.trim() || '';
-  const targetMonth = document.getElementById('req-target-month')?.value;
 
-  const isFixed = isFixedStaff(currentUser.displayName);
-  const noteReason = isFixed ? `常日班特休 (${reason || '特休'})` : (selectedType === 'abroad' ? `✈️出國 (${reason || '國外行程'})` : reason);
+  const isFixed = isFixedStaff(userName);
+  const isDoc = isDoctor(userName, currentUser.role);
+  
+  let noteReason = reason;
+  if (isDoc) noteReason = `醫師排休 (${reason || '休診/代班'})`;
+  else if (isFixed) noteReason = `常日班特休 (${reason || '特休'})`;
+  else if (selectedType === 'abroad') noteReason = `✈️出國 (${reason || '國外行程'})`;
 
   const payload = {
     target_month: targetMonth,
     employee_id: currentUser.empId || null,
-    line_user_id: currentUser.lineUserId,
-    employee_name: currentUser.displayName,
+    line_user_id: userId,
+    employee_name: userName,
     request_date: userReqDate,
     request_type: selectedType,
     shift_id: 'off',
     reason: noteReason,
-    status: 'pending'
+    status: 'approved'
   };
 
-  const { error } = await client
-    .from('clinic_schedule_requests')
-    .upsert([payload], { onConflict: 'employee_id,request_date' });
+  try {
+    const { error } = await client
+      .from('clinic_schedule_requests')
+      .upsert([payload], { onConflict: 'line_user_id,request_date' });
 
-  if (error) alert('登記失敗：' + error.message);
-  else alert('✅ 登記成功！已同步至全員看板與排班系統。');
+    if (error) throw error;
 
-  closeUserReqModal();
-  loadRequestCalendar();
+    alert(`🎉【${userReqDate}】排休/特休登記成功！`);
+    closeUserReqModal();
+    loadRequestCalendar();
+    if (typeof loadMySchedule === 'function') loadMySchedule();
+  } catch (err) {
+    console.error('排休登記失敗:', err);
+    alert('登記失敗：' + err.message);
+  }
 }
 
 async function deleteCurrentDayRequest() {
@@ -493,9 +524,23 @@ async function deleteCurrentDayRequest() {
   const client = getHrSupabase();
   if (!client) return;
 
-  await client.from('clinic_schedule_requests').delete().eq('request_date', userReqDate).or(`employee_id.eq.${currentUser.empId},line_user_id.eq.${currentUser.lineUserId}`);
-  closeUserReqModal();
-  loadRequestCalendar();
+  try {
+    const { error } = await client
+      .from('clinic_schedule_requests')
+      .delete()
+      .eq('request_date', userReqDate)
+      .eq('line_user_id', currentUser.lineUserId);
+
+    if (error) throw error;
+
+    alert('✅ 已取消該日排休登記');
+    closeUserReqModal();
+    loadRequestCalendar();
+    if (typeof loadMySchedule === 'function') loadMySchedule();
+  } catch (err) {
+    console.error('刪除排休失敗:', err);
+    alert('取消失敗：' + err.message);
+  }
 }
 
 // ==================== 3. 護理長排班中心 ====================
