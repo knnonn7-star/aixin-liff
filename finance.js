@@ -1,20 +1,22 @@
 /**
  * 愛欣診所 LINE 管理系統 - 帳務管理模組 (finance.js)
- * 包含：進貨登記、待補發票管理、月報統計、CSV安全匯出
  */
 
-// ==================== CSV 防注入安全函式 ====================
+function getFinSupabase() {
+  return window.supabaseClient || (typeof supabaseClient !== 'undefined' ? supabaseClient : null);
+}
+
+// CSV 防注入安全過濾
 function sanitizeCsvCell(val) {
   if (val === null || val === undefined) return '""';
   let str = String(val).replace(/"/g, '""');
-  // 若開頭為公式字元 (=, +, -, @, \t, \r)，前面加上單引號防止 Excel 執行惡意公式
   if (/^[=+\-@\t\r]/.test(str)) {
     str = "'" + str;
   }
   return `"${str}"`;
 }
 
-// ==================== 頁籤切換 ====================
+// 頁籤切換
 function switchFinTab(tabKey) {
   const tabs = ['register', 'invoice', 'report'];
   tabs.forEach(t => {
@@ -31,10 +33,13 @@ function switchFinTab(tabKey) {
   });
 
   if (tabKey === 'invoice') loadPendingInvoices();
-  if (tabKey === 'report') loadSupplierTimeline();
+  if (tabKey === 'report') {
+    loadSupplierTimeline();
+    generateMonthlyReport();
+  }
 }
 
-// ==================== 表單模式切換 ====================
+// 表單模式切換
 function updateFormMode() {
   const type = document.querySelector('input[name="type"]:checked')?.value || 'delivery';
   const supGroup = document.getElementById('supplier-group');
@@ -42,13 +47,13 @@ function updateFormMode() {
   const docSec = document.getElementById('delivery-doc-mode-section');
 
   if (type === 'delivery' || type === 'pharma') {
-    supGroup.classList.remove('hidden');
-    catGroup.classList.add('hidden');
-    docSec.classList.remove('hidden');
+    supGroup?.classList.remove('hidden');
+    catGroup?.classList.add('hidden');
+    docSec?.classList.remove('hidden');
   } else {
-    supGroup.classList.add('hidden');
-    catGroup.classList.remove('hidden');
-    docSec.classList.add('hidden');
+    supGroup?.classList.add('hidden');
+    catGroup?.classList.remove('hidden');
+    docSec?.classList.add('hidden');
     initCategoryOptions(type);
   }
   toggleDocMode();
@@ -80,59 +85,34 @@ function toggleDocMode() {
   const invoiceBox = document.getElementById('doc-invoice-box');
 
   if (!isDelivery) {
-    receiptBox.classList.remove('hidden');
-    invoiceBox.classList.add('hidden');
+    receiptBox?.classList.remove('hidden');
+    invoiceBox?.classList.add('hidden');
     return;
   }
 
   if (docMode === 'has_invoice') {
-    receiptBox.classList.add('hidden');
-    invoiceBox.classList.remove('hidden');
+    receiptBox?.classList.add('hidden');
+    invoiceBox?.classList.remove('hidden');
   } else {
-    receiptBox.classList.remove('hidden');
-    invoiceBox.classList.add('hidden');
+    receiptBox?.classList.remove('hidden');
+    invoiceBox?.classList.add('hidden');
   }
 }
 
-// ==================== 發票重複檢查 ====================
-async function checkDuplicateInvoice(invNo, warnElemId) {
-  if (!invNo) return;
-  const warnElem = document.getElementById(warnElemId);
-  const cleanInv = invNo.trim().toUpperCase();
-
-  try {
-    const { data, error } = await supabaseClient
-      .from('cash_log')
-      .select('id, supplier, amount')
-      .eq('invoice_no', cleanInv)
-      .maybeSingle();
-
-    if (warnElem) {
-      if (data) {
-        warnElem.innerText = `⚠️ 發票已存在！廠商: ${data.supplier}, 金額: $${data.amount}`;
-        warnElem.classList.remove('hidden');
-      } else {
-        warnElem.classList.add('hidden');
-      }
-    }
-  } catch (err) {
-    console.error('發票檢查失敗:', err);
-  }
-}
-
-// ==================== 現場登記送出 ====================
+// 現場登記送出
 document.addEventListener('DOMContentLoaded', () => {
   const cashForm = document.getElementById('cash-form');
   if (cashForm) {
     cashForm.addEventListener('submit', handleCashLogSubmit);
   }
+  updateFormMode();
 });
 
 async function handleCashLogSubmit(e) {
   e.preventDefault();
-
-  if (!currentUser.empId) {
-    alert('⚠️ 您的帳號尚未完成員工綁定，無法送出！');
+  const client = getFinSupabase();
+  if (!client) {
+    alert('資料庫連線中，請稍後重試！');
     return;
   }
 
@@ -159,7 +139,7 @@ async function handleCashLogSubmit(e) {
       amount = parseFloat(amtRaw);
 
       if (isNaN(amount) || amount <= 0) {
-        alert('請輸入有效的發票總金額！');
+        alert('請輸入大於 0 的有效發票金額！');
         return;
       }
       status = '已附發票待付款';
@@ -167,19 +147,22 @@ async function handleCashLogSubmit(e) {
       status = '待補發票';
     }
   } else {
-    // 零用金或收入
+    const amtRaw = document.getElementById('amount')?.value;
+    if (amtRaw) amount = parseFloat(amtRaw) || 0;
     status = '已完成';
   }
 
   const submitBtn = document.getElementById('submit-btn');
-  submitBtn.disabled = true;
-  submitBtn.innerText = '儲存中...';
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerText = '儲存中...';
+  }
 
   try {
-    const { error } = await supabaseClient.from('cash_log').insert([{
-      line_user_id: currentUser.lineUserId,
-      created_by: currentUser.empId,
-      user_name: currentUser.displayName,
+    const { error } = await client.from('cash_log').insert([{
+      line_user_id: currentUser?.lineUserId || 'manual_entry',
+      created_by: currentUser?.empId || null,
+      user_name: currentUser?.displayName || '同仁登記',
       type: type,
       supplier: supplier || null,
       category: category || null,
@@ -198,19 +181,23 @@ async function handleCashLogSubmit(e) {
     console.error('送出失敗:', err);
     alert('登記失敗：' + (err.message.includes('idx_unique_invoice_no') ? '此發票號碼已被登記過！' : err.message));
   } finally {
-    submitBtn.disabled = false;
-    submitBtn.innerText = '確認點收並送出';
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerText = '確認點收並送出';
+    }
   }
 }
 
-// ==================== 待補發票列表 ====================
+// 待補發票清單
 async function loadPendingInvoices() {
   const container = document.getElementById('pending-invoice-list');
-  if (!container) return;
+  const client = getFinSupabase();
+  if (!container || !client) return;
+
   container.innerHTML = '<div class="text-center text-slate-400 py-4">載入中...</div>';
 
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await client
       .from('cash_log')
       .select('*')
       .eq('status', '待補發票')
@@ -236,19 +223,19 @@ async function loadPendingInvoices() {
       </div>
     `).join('');
   } catch (err) {
-    console.error('讀取待補發票清單失敗:', err);
+    console.error('讀取清單失敗:', err);
     container.innerHTML = '<div class="text-center text-rose-500 py-4">讀取失敗</div>';
   }
 }
 
-// ==================== 發票補登彈窗 ====================
+// 發票補登彈窗
 function openInvoiceModal(id) {
   document.getElementById('modal-id').value = id;
   document.getElementById('modal-invoice-no').value = '';
   document.getElementById('modal-amount').value = '';
   
-  // 預設付款日為次月最後一天
-  const nextMonthLastDay = new Date(new Date().getFullYear(), new Date().getMonth() + 2, 0);
+  const now = new Date();
+  const nextMonthLastDay = new Date(now.getFullYear(), now.getMonth() + 2, 0);
   document.getElementById('modal-due-date').value = nextMonthLastDay.toISOString().split('T')[0];
 
   document.getElementById('invoice-modal').classList.remove('hidden');
@@ -263,6 +250,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (modalForm) {
     modalForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      const client = getFinSupabase();
+      if (!client) return;
+
       const id = document.getElementById('modal-id').value;
       const invNo = document.getElementById('modal-invoice-no').value.trim().toUpperCase();
       const amount = parseFloat(document.getElementById('modal-amount').value);
@@ -274,7 +264,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       try {
-        const { error } = await supabaseClient
+        const { error } = await client
           .from('cash_log')
           .update({
             invoice_no: invNo,
@@ -286,18 +276,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (error) throw error;
 
-        alert('✅ 發票補登成功！已列入待付款。');
+        alert('✅ 發票補登成功！');
         closeInvoiceModal();
         loadPendingInvoices();
       } catch (err) {
-        console.error('補登發票失敗:', err);
+        console.error('補登失敗:', err);
         alert('補登失敗：' + (err.message.includes('idx_unique_invoice_no') ? '此發票號碼已被登記過！' : err.message));
       }
     });
   }
 });
 
-// ==================== 月報與 CSV 匯出 ====================
+// 月報統計
 function loadSupplierTimeline() {
   const repMonth = document.getElementById('report-month');
   if (repMonth && !repMonth.value) {
@@ -306,15 +296,77 @@ function loadSupplierTimeline() {
   }
 }
 
+async function generateMonthlyReport() {
+  const client = getFinSupabase();
+  const repMonth = document.getElementById('report-month')?.value;
+  if (!client || !repMonth) return;
+
+  const resultBox = document.getElementById('report-result-box');
+  const basis = document.querySelector('input[name="report-basis"]:checked')?.value || 'event_date';
+
+  try {
+    const filterField = basis === 'due_date' ? 'due_date' : 'created_at';
+    const { data, error } = await client
+      .from('cash_log')
+      .select('*')
+      .gte(filterField, `${repMonth}-01T00:00:00`)
+      .lte(filterField, `${repMonth}-31T23:59:59`);
+
+    if (error) throw error;
+
+    let income = 0;
+    let expense = 0;
+    let delivery = 0;
+    const supplierMap = {};
+
+    (data || []).forEach(item => {
+      const amt = Number(item.amount) || 0;
+      if (item.type === 'income') income += amt;
+      else if (item.type === 'expense') expense += amt;
+      else if (item.type === 'delivery' || item.type === 'pharma') {
+        delivery += amt;
+        const sup = item.supplier || '其他廠商';
+        supplierMap[sup] = (supplierMap[sup] || 0) + amt;
+      }
+    });
+
+    const net = income - expense - delivery;
+
+    document.getElementById('rep-income').innerText = `$${income.toLocaleString()}`;
+    document.getElementById('rep-expense').innerText = `$${expense.toLocaleString()}`;
+    document.getElementById('rep-delivery').innerText = `$${delivery.toLocaleString()}`;
+    document.getElementById('rep-net').innerText = `$${net.toLocaleString()}`;
+
+    const breakdownList = document.getElementById('rep-supplier-breakdown');
+    if (breakdownList) {
+      breakdownList.innerHTML = Object.keys(supplierMap).length === 0
+        ? '<li class="text-slate-400">當月無進貨款項</li>'
+        : Object.entries(supplierMap).map(([sup, total]) => `
+            <li class="flex justify-between border-b border-slate-200 py-0.5">
+              <span>${sup}</span>
+              <strong class="text-slate-700">$${total.toLocaleString()}</strong>
+            </li>
+          `).join('');
+    }
+
+    if (resultBox) resultBox.classList.remove('hidden');
+  } catch (err) {
+    console.error('月報統計失敗:', err);
+  }
+}
+
+// 匯出 CSV
 async function exportCsvReport() {
-  const month = document.getElementById('report-month').value;
+  const client = getFinSupabase();
+  const month = document.getElementById('report-month')?.value;
   if (!month) {
     alert('請先選擇月份！');
     return;
   }
+  if (!client) return;
 
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await client
       .from('cash_log')
       .select('*')
       .gte('created_at', `${month}-01T00:00:00`)
@@ -328,7 +380,6 @@ async function exportCsvReport() {
       return;
     }
 
-    // 加上 BOM 避免 Excel 開啟亂碼，並使用安全轉義
     let csv = '\uFEFF時間,類型,廠商/項目,金額,發票號碼,備註,登記人\n';
     data.forEach(d => {
       csv += `${sanitizeCsvCell(d.created_at)},` +
