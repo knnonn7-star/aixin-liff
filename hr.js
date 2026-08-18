@@ -1,4 +1,8 @@
-// ==================== 愛欣診所 人事排班與特休管理模組 (hr.js) - 第一段 ====================
+/**
+ * 愛欣診所 LINE 管理系統 - 人事排班與特休管理模組 (hr.js) - 第一段
+ */
+
+// ==================== 全域狀態與常數 ====================
 let cachedEmployees = [];
 let cachedMonthSchedules = [];
 let cachedMonthRequests = [];
@@ -6,13 +10,13 @@ let cachedMonthLotteries = [];
 let editingDate = null;
 let userReqDate = null;
 
-// 3 大核心班別 (已移除開門小白班)
+// 3 大核心班別
 const SHIFT_TYPES = ['未排班', '開門白班', '正常白班', '正常晚班'];
 
 // 5 種標準工時 (小時)
 const WORK_HOURS = [7, 7.5, 8.5, 9, 9.5];
 
-// 護理師與全體同仁「固定專屬代碼」對照表 (依年資排序)
+// 護理師與全體同仁「固定專屬代碼」對照表 (年資排序)
 const NURSE_CODE_MAP = {
   '陳慧倪': '01', '陳惠倪': '01',
   '曾憲敏': '02',
@@ -34,7 +38,7 @@ const NURSE_CODE_MAP = {
   '林和正': '醫師'
 };
 
-// 診所全員精確入職日期資料庫 (套用勞基法特休專用)
+// 診所全員入職日期資料庫
 const EMPLOYEE_ONBOARDING_DATA = {
   '陳慧倪': { onboard: '2005-05-01', roleName: '護理長' },
   '陳惠倪': { onboard: '2005-05-01', roleName: '護理長' },
@@ -43,7 +47,7 @@ const EMPLOYEE_ONBOARDING_DATA = {
   '李牧音': { onboard: '2006-01-11', roleName: '護理師' },
   '林雯琦': { onboard: '2006-12-01', roleName: '護理師' },
   '謝宜婷': { onboard: '2009-11-02', roleName: '護理師' },
-  '盧明伶': { onboard: '2009-11-02', roleName: '門診藥事' },
+  '盧明伶': { onboard: '2009-11-02', roleName: '門診藥事(常日班)' },
   '陳金暖': { onboard: '2010-04-01', roleName: '小組長' },
   '王瓊代': { onboard: '2014-05-01', roleName: '護理師' },
   '吳金燕': { onboard: '2018-05-01', roleName: '護理師' },
@@ -51,16 +55,16 @@ const EMPLOYEE_ONBOARDING_DATA = {
   '吳培瑜': { onboard: '2021-09-20', roleName: '護理師' },
   '李香瑩': { onboard: '2023-07-10', roleName: '護理師' },
   '吳沐芸': { onboard: '2024-05-15', roleName: '護理師' },
-  '涂春娥': { onboard: '2008-10-20', roleName: '工作人員' },
+  '涂春娥': { onboard: '2008-10-20', roleName: '行政人員' },
   '胡月霞': { onboard: '2022-04-01', roleName: '清潔人員' },
   '王芝妍': { onboard: '2018-08-06', roleName: '工時透析' },
   '林和正': { onboard: '2000-01-01', roleName: '醫師' }
 };
 
-// 固定班同仁名冊
+// 固定常日班名冊
 const FIXED_STAFF_ROLES = {
-  '盧明伶': { roleName: '門診藥事', tag: 'bg-emerald-100 text-emerald-900 border-emerald-300' },
-  '涂春娥': { roleName: '工作人員', tag: 'bg-teal-100 text-teal-900 border-teal-300' },
+  '盧明伶': { roleName: '門診藥事(常日班)', tag: 'bg-emerald-100 text-emerald-900 border-emerald-300' },
+  '涂春娥': { roleName: '行政人員', tag: 'bg-teal-100 text-teal-900 border-teal-300' },
   '胡月霞': { roleName: '清潔人員', tag: 'bg-cyan-100 text-cyan-900 border-cyan-300' }
 };
 
@@ -80,60 +84,47 @@ const NATIONAL_HOLIDAYS_2026 = [
   { name: '雙十國慶', date: '2026-10-10' }
 ];
 
+function getHrSupabase() {
+  return window.supabaseClient || (typeof supabaseClient !== 'undefined' ? supabaseClient : null);
+}
+
 function getHolidayInfo(dateStr) {
   return NATIONAL_HOLIDAYS_2026.find(h => h.date === dateStr);
 }
 
-// 核心函式：100% 精準解析代碼 (支援 物件 / 姓名 / UUID)
-function getEmpCode(input) {
-  if (!input) return '??';
+function getEmpCode(empOrNameOrId) {
+  if (!empOrNameOrId) return '??';
   let name = '';
-  
-  if (typeof input === 'object') {
-    if (input.name) name = input.name;
-    else if (input.employee_id) return getEmpCode(input.employee_id);
-  } else if (typeof input === 'string') {
-    name = input.trim();
-    if (cachedEmployees && cachedEmployees.length > 0) {
-      const found = cachedEmployees.find(e => e.id === name || e.name === name);
-      if (found) name = found.name;
-    }
+  if (typeof empOrNameOrId === 'string') {
+    name = empOrNameOrId;
+    const found = cachedEmployees.find(e => e.id === empOrNameOrId || e.name === empOrNameOrId);
+    if (found) name = found.name;
+  } else if (empOrNameOrId.name) {
+    name = empOrNameOrId.name;
   }
 
   if (NURSE_CODE_MAP[name]) return NURSE_CODE_MAP[name];
-
-  for (const [key, val] of Object.entries(NURSE_CODE_MAP)) {
-    if (name.includes(key) || key.includes(name)) return val;
-  }
-
-  return name ? name.substring(0, 2) : '??';
+  if (name.includes('慧倪') || name.includes('惠倪')) return '01';
+  return name.length >= 2 ? name.substring(0, 2) : name;
 }
 
-// 依據入職日期計算年資與勞基法特休天數
 function calculateLaborSpecialLeave(name) {
   const info = EMPLOYEE_ONBOARDING_DATA[name] || EMPLOYEE_ONBOARDING_DATA['陳慧倪'];
   if (!info) return { days: 10, seniorityText: '年資：約 2 年 (預設)' };
 
   const onboard = new Date(info.onboard);
-  const now = new Date('2026-08-17');
+  const now = new Date();
   const totalMonths = (now.getFullYear() - onboard.getFullYear()) * 12 + (now.getMonth() - onboard.getMonth());
   const years = totalMonths / 12;
 
   let days = 0;
-  if (years < 0.5) {
-    days = 0;
-  } else if (years < 1) {
-    days = 3;  // 滿6個月以上未滿1年：3日
-  } else if (years < 2) {
-    days = 7;  // 滿1年以上未滿2年：7日
-  } else if (years < 3) {
-    days = 10; // 滿2年以上未滿3年：10日
-  } else if (years < 5) {
-    days = 14; // 滿3年以上未滿5年：14日
-  } else if (years < 10) {
-    days = 15; // 滿5年以上未滿10年：15日
-  } else {
-    // 滿10年以上：每滿1年加給1日，上限30日
+  if (years < 0.5) days = 0;
+  else if (years < 1) days = 3;
+  else if (years < 2) days = 7;
+  else if (years < 3) days = 10;
+  else if (years < 5) days = 14;
+  else if (years < 10) days = 15;
+  else {
     const extraYears = Math.floor(years - 10) + 1;
     days = Math.min(30, 15 + extraYears);
   }
@@ -141,6 +132,10 @@ function calculateLaborSpecialLeave(name) {
   const seniorityText = `到職：${info.onboard} (年資 ${years.toFixed(1)} 年)`;
   return { days, seniorityText, roleName: info.roleName };
 }
+
+function isFixedStaff(name) { return !!FIXED_STAFF_ROLES[name]; }
+function isDoctor(name, role) { return name === '林和正' || role === 'doctor'; }
+function isDialysisNurse(name, role) { return !isFixedStaff(name) && !isDoctor(name, role); }
 
 function switchHrTab(tab) {
   const isAdminUser = (currentUser.displayName === '陳慧倪' || currentUser.displayName === '陳惠倪' || currentUser.displayName === '林和正' || currentUser.role === 'doctor');
@@ -180,18 +175,12 @@ function initHrDefaults() {
   if (adminMonthElem && !adminMonthElem.value) adminMonthElem.value = nextMonthStr;
 }
 
-function isFixedStaff(name) { return !!FIXED_STAFF_ROLES[name]; }
-function isDoctor(name, role) { return name === '林和正' || role === 'doctor'; }
-function isDialysisNurse(name, role) { return !isFixedStaff(name) && !isDoctor(name, role); }
-// ==================== 1. 「我的班表」月曆與法定假期餘額結算 (已徹底移除週休與例休) ====================
+// ==================== 1. 「我的班表」月曆與法定假期餘額結算 ====================
 async function loadMySchedule() {
-  if (!currentUser.empId) await syncEmployeeRecord();
-  initHrDefaults();
+  const client = getHrSupabase();
+  if (!client) return;
 
-  if (cachedEmployees.length === 0) {
-    const { data: emps } = await supabaseClient.from('clinic_employees').select('*');
-    if (emps) cachedEmployees = emps;
-  }
+  initHrDefaults();
 
   const monthStr = document.getElementById('my-sch-month')?.value;
   if (!monthStr) return;
@@ -206,27 +195,25 @@ async function loadMySchedule() {
   const endDateStr = `${monthStr}-${totalDays}`;
 
   const [yearSchRes, monthSchRes, yearLotteryRes] = await Promise.all([
-    supabaseClient.from('clinic_schedules').select('*').eq('employee_id', currentUser.empId).gte('date', `${yearStr}-01-01`).lte('date', `${yearStr}-12-31`),
-    supabaseClient.from('clinic_schedules').select('*').eq('employee_id', currentUser.empId).gte('date', startDateStr).lte('date', endDateStr),
-    supabaseClient.from('clinic_holiday_lottery').select('*').eq('winner_emp_id', currentUser.empId).eq('year', parseInt(yearStr, 10))
+    client.from('clinic_schedules').select('*').eq('employee_id', currentUser.empId || '00000000-0000-0000-0000-000000000000').gte('date', `${yearStr}-01-01`).lte('date', `${yearStr}-12-31`),
+    client.from('clinic_schedules').select('*').eq('employee_id', currentUser.empId || '00000000-0000-0000-0000-000000000000').gte('date', startDateStr).lte('date', endDateStr),
+    client.from('clinic_holiday_lottery').select('*').eq('winner_emp_id', currentUser.empId || '00000000-0000-0000-0000-000000000000').eq('year', parseInt(yearStr, 10))
   ]);
 
   const yearSchedules = yearSchRes.data || [];
   const monthSchedules = monthSchRes.data || [];
   const yearLotteries = yearLotteryRes.data || [];
 
-  // 1. 各別入職日法定特休計算
   const { days: totalSpecialLeave, seniorityText } = calculateLaborSpecialLeave(currentUser.displayName);
   const usedSpecialLeave = yearSchedules.filter(s => s.shift_name?.includes('特休') || s.shift_name?.includes('年休')).length;
-  document.getElementById('my-seniority-text').innerText = seniorityText;
-  document.getElementById('stat-special-leave').innerText = `${usedSpecialLeave} / ${totalSpecialLeave}日`;
+  
+  if (document.getElementById('my-seniority-text')) document.getElementById('my-seniority-text').innerText = seniorityText;
+  if (document.getElementById('stat-special-leave')) document.getElementById('stat-special-leave').innerText = `${usedSpecialLeave} / ${totalSpecialLeave}日`;
 
-  // 2. 政府法定國定假日 (12 日)
   const totalNational = NATIONAL_HOLIDAYS_2026.length;
   const usedNational = yearLotteries.length;
-  document.getElementById('stat-national-leave').innerText = `${usedNational} / ${totalNational}日`;
+  if (document.getElementById('stat-national-leave')) document.getElementById('stat-national-leave').innerText = `${usedNational} / ${totalNational}日`;
 
-  // 3. 工時增減折算 (基準 8h/日)
   let netHoursDiff = 0;
   let monthWorkHours = 0;
   yearSchedules.forEach(s => {
@@ -244,14 +231,13 @@ async function loadMySchedule() {
 
   const hoursOffsetDays = (netHoursDiff / 8.0);
   const offsetSign = hoursOffsetDays >= 0 ? '+' : '';
-  document.getElementById('stat-hours-offset-days').innerText = `${offsetSign}${hoursOffsetDays.toFixed(1)}日 (${netHoursDiff.toFixed(1)}h)`;
-  document.getElementById('my-total-hours').innerText = `${monthWorkHours} 小時`;
+  if (document.getElementById('stat-hours-offset-days')) document.getElementById('stat-hours-offset-days').innerText = `${offsetSign}${hoursOffsetDays.toFixed(1)}日 (${netHoursDiff.toFixed(1)}h)`;
+  if (document.getElementById('my-total-hours')) document.getElementById('my-total-hours').innerText = `${monthWorkHours} 小時`;
 
-  // 4. 總剩餘假期結算 = 特休剩餘 + 國定假剩餘 + 工時折算 (不計週休)
   const remainingSpecial = Math.max(0, totalSpecialLeave - usedSpecialLeave);
   const remainingNational = Math.max(0, totalNational - usedNational);
   const remainingTotal = (remainingSpecial + remainingNational + hoursOffsetDays);
-  document.getElementById('my-remaining-total-days').innerText = `${remainingTotal.toFixed(1)} 天`;
+  if (document.getElementById('my-remaining-total-days')) document.getElementById('my-remaining-total-days').innerText = `${remainingTotal.toFixed(1)} 天`;
 
   const grid = document.getElementById('my-calendar-grid');
   if (!grid) return;
@@ -310,10 +296,12 @@ async function loadMySchedule() {
     grid.appendChild(cell);
   }
 }
+/**
+ * 愛欣診所 LINE 管理系統 - 人事排班與特休管理模組 (hr.js) - 第二段
+ */
 
 // ==================== 2. 「全員預約看板」共享月曆視圖 ====================
 async function initRequestPage() {
-  if (!currentUser.empId) await syncEmployeeRecord();
   initHrDefaults();
 
   const today = new Date();
@@ -324,7 +312,7 @@ async function initRequestPage() {
 
   if (deadlineTag) {
     if (isFixed) {
-      deadlineTag.innerText = "🌿 工作同仁：特休/年休登記";
+      deadlineTag.innerText = "🌿 常日班同仁：特休/年休預約";
       deadlineTag.className = "bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded font-bold";
     } else if (currentDay > 15 && !isAdminUser) {
       deadlineTag.innerText = "⚠️ 預約已於 15 號截止 (護理長排班中)";
@@ -339,8 +327,9 @@ async function initRequestPage() {
 }
 
 async function loadRequestCalendar() {
+  const client = getHrSupabase();
   const monthStr = document.getElementById('req-target-month')?.value;
-  if (!monthStr) return;
+  if (!client || !monthStr) return;
 
   const [y, m] = monthStr.split('-').map(Number);
   const firstDayObj = new Date(y, m - 1, 1);
@@ -351,9 +340,9 @@ async function loadRequestCalendar() {
   const endDateStr = `${monthStr}-${totalDays}`;
 
   const [empRes, allReqRes, lotteryRes] = await Promise.all([
-    supabaseClient.from('clinic_employees').select('*'),
-    supabaseClient.from('clinic_schedule_requests').select('*').gte('request_date', startDateStr).lte('request_date', endDateStr),
-    supabaseClient.from('clinic_holiday_lottery').select('*').gte('holiday_date', startDateStr).lte('holiday_date', endDateStr)
+    client.from('clinic_employees').select('*').eq('is_active', true),
+    client.from('clinic_schedule_requests').select('*, clinic_employees(*)').gte('request_date', startDateStr).lte('request_date', endDateStr),
+    client.from('clinic_holiday_lottery').select('*, clinic_employees(*)').gte('holiday_date', startDateStr).lte('holiday_date', endDateStr)
   ]);
 
   cachedEmployees = empRes.data || [];
@@ -374,7 +363,7 @@ async function loadRequestCalendar() {
     const dayStr = `${monthStr}-${String(d).padStart(2, '0')}`;
     const dayOfWeek = new Date(y, m - 1, d).getDay();
     const dayReqs = allRequests.filter(r => r.request_date === dayStr);
-    const myReq = dayReqs.find(r => r.employee_id === currentUser.empId);
+    const myReq = dayReqs.find(r => r.employee_id === currentUser.empId || r.line_user_id === currentUser.lineUserId);
     const holiday = getHolidayInfo(dayStr);
     const holidayWinner = monthLotteries.find(l => l.holiday_date === dayStr);
 
@@ -396,19 +385,19 @@ async function loadRequestCalendar() {
     let bodyHtml = `<div class="space-y-0.5 mt-0.5">`;
 
     if (holidayWinner) {
-      const code = getEmpCode(holidayWinner.winner_emp_id);
-      bodyHtml += `<div class="text-[9px] bg-purple-100 text-purple-900 font-bold px-1 rounded truncate">🥇國休:[${code}]</div>`;
+      const winnerName = holidayWinner.clinic_employees?.name || '';
+      bodyHtml += `<div class="text-[9px] bg-purple-100 text-purple-900 font-bold px-1 rounded truncate">🥇國定休:${winnerName}</div>`;
     }
 
     const abroadList = dayReqs.filter(r => r.request_type === 'abroad');
     if (abroadList.length > 0) {
-      const aNames = abroadList.map(r => `[${getEmpCode(r.employee_id)}]`).join(' ');
+      const aNames = abroadList.map(r => `[${getEmpCode(r.clinic_employees || r.employee_id)}]`).join(' ');
       bodyHtml += `<div class="text-[9px] bg-purple-600 text-white font-bold px-1 rounded truncate">✈️出國:${aNames}</div>`;
     }
 
     const offList = dayReqs.filter(r => r.request_type === 'off');
     if (offList.length > 0) {
-      const oNames = offList.map(r => `[${getEmpCode(r.employee_id)}]`).join(' ');
+      const oNames = offList.map(r => `[${getEmpCode(r.clinic_employees || r.employee_id)}]`).join(' ');
       bodyHtml += `<div class="text-[9px] bg-rose-500 text-white font-bold px-1 rounded truncate">🏖️排休:${oNames}</div>`;
     }
 
@@ -436,55 +425,64 @@ function openUserReqModal(dateStr, dayOfWeek, existingReq, holiday) {
   document.getElementById('user-req-date-title').innerText = `📅 ${dateStr} ${holiday ? `(🎌${holiday.name})` : ''} 登記`;
 
   const abroadOpt = document.getElementById('user-req-abroad-opt');
-  if (isFixed) abroadOpt.classList.add('hidden');
-  else abroadOpt.classList.remove('hidden');
+  if (isFixed) abroadOpt?.classList.add('hidden');
+  else abroadOpt?.classList.remove('hidden');
 
   const deleteBtn = document.getElementById('btn-delete-req');
   const reasonInput = document.getElementById('user-req-reason');
 
   if (existingReq) {
-    deleteBtn.classList.remove('hidden');
-    reasonInput.value = existingReq.reason || '';
+    deleteBtn?.classList.remove('hidden');
+    if (reasonInput) reasonInput.value = existingReq.reason || '';
     const radios = document.querySelectorAll('input[name="user-req-type"]');
     radios.forEach(r => {
       if (existingReq.request_type === r.value) r.checked = true;
     });
   } else {
-    deleteBtn.classList.add('hidden');
-    reasonInput.value = '';
-    document.querySelector('input[name="user-req-type"][value="off"]').checked = true;
+    deleteBtn?.classList.add('hidden');
+    if (reasonInput) reasonInput.value = '';
+    const defRadio = document.querySelector('input[name="user-req-type"][value="off"]');
+    if (defRadio) defRadio.checked = true;
   }
 
-  document.getElementById('user-req-modal').classList.remove('hidden');
+  document.getElementById('user-req-modal')?.classList.remove('hidden');
 }
 
 function closeUserReqModal() {
-  document.getElementById('user-req-modal').classList.add('hidden');
+  document.getElementById('user-req-modal')?.classList.add('hidden');
   userReqDate = null;
 }
 
 async function submitUserDayRequest() {
   if (!userReqDate) return;
+  const client = getHrSupabase();
+  if (!client) return;
 
   const selectedType = document.querySelector('input[name="user-req-type"]:checked')?.value || 'off';
-  const reason = document.getElementById('user-req-reason').value;
-  const targetMonth = document.getElementById('req-target-month').value;
+  const reason = document.getElementById('user-req-reason')?.value.trim() || '';
+  const targetMonth = document.getElementById('req-target-month')?.value;
 
   const isFixed = isFixedStaff(currentUser.displayName);
-  const noteReason = isFixed ? `特休/年休 (${reason || '自排'})` : (selectedType === 'abroad' ? `✈️出國 (${reason || '國外行程'})` : reason);
+  const noteReason = isFixed ? `常日班特休 (${reason || '特休'})` : (selectedType === 'abroad' ? `✈️出國 (${reason || '國外行程'})` : reason);
 
-  const { error } = await supabaseClient.from('clinic_schedule_requests').upsert([{
+  const payload = {
     target_month: targetMonth,
-    employee_id: currentUser.empId,
+    employee_id: currentUser.empId || null,
+    line_user_id: currentUser.lineUserId,
+    employee_name: currentUser.displayName,
     request_date: userReqDate,
     request_type: selectedType,
     shift_id: 'off',
     reason: noteReason,
     status: 'pending'
-  }], { onConflict: 'employee_id,request_date' });
+  };
+
+  const { error } = await client
+    .from('clinic_schedule_requests')
+    .upsert([payload], { onConflict: 'employee_id,request_date' });
 
   if (error) alert('登記失敗：' + error.message);
-  else alert('✅ 登記成功！已同步至全員看板與護理長排班系統。');
+  else alert('✅ 登記成功！已同步至全員看板與排班系統。');
 
   closeUserReqModal();
   loadRequestCalendar();
@@ -492,14 +490,20 @@ async function submitUserDayRequest() {
 
 async function deleteCurrentDayRequest() {
   if (!userReqDate) return;
-  await supabaseClient.from('clinic_schedule_requests').delete().eq('employee_id', currentUser.empId).eq('request_date', userReqDate);
+  const client = getHrSupabase();
+  if (!client) return;
+
+  await client.from('clinic_schedule_requests').delete().eq('request_date', userReqDate).or(`employee_id.eq.${currentUser.empId},line_user_id.eq.${currentUser.lineUserId}`);
   closeUserReqModal();
   loadRequestCalendar();
 }
 
-// ==================== 3. 護理長排班中心 (含輪班間隔防呆) ====================
+// ==================== 3. 護理長排班中心 ====================
 async function initScheduleAdmin() {
-  const { data: empData } = await supabaseClient.from('clinic_employees').select('*');
+  const client = getHrSupabase();
+  if (!client) return;
+
+  const { data: empData } = await client.from('clinic_employees').select('*').eq('is_active', true);
   
   const seen = new Set();
   cachedEmployees = (empData || []).filter(e => {
@@ -544,8 +548,9 @@ async function initScheduleAdmin() {
 }
 
 async function loadScheduleCalendar() {
+  const client = getHrSupabase();
   const monthStr = document.getElementById('admin-sch-month')?.value;
-  if (!monthStr) return;
+  if (!client || !monthStr) return;
 
   const [y, m] = monthStr.split('-').map(Number);
   const firstDayObj = new Date(y, m - 1, 1);
@@ -556,9 +561,9 @@ async function loadScheduleCalendar() {
   const endDateStr = `${monthStr}-${totalDays}`;
 
   const [schRes, reqRes, lotteryRes] = await Promise.all([
-    supabaseClient.from('clinic_schedules').select('*').gte('date', startDateStr).lte('date', endDateStr),
-    supabaseClient.from('clinic_schedule_requests').select('*').gte('request_date', startDateStr).lte('request_date', endDateStr),
-    supabaseClient.from('clinic_holiday_lottery').select('*').gte('holiday_date', startDateStr).lte('holiday_date', endDateStr)
+    client.from('clinic_schedules').select('*, clinic_employees(*)').gte('date', startDateStr).lte('date', endDateStr),
+    client.from('clinic_schedule_requests').select('*, clinic_employees(*)').gte('request_date', startDateStr).lte('request_date', endDateStr),
+    client.from('clinic_holiday_lottery').select('*, clinic_employees(*)').gte('holiday_date', startDateStr).lte('holiday_date', endDateStr)
   ]);
 
   cachedMonthSchedules = schRes.data || [];
@@ -600,26 +605,26 @@ async function loadScheduleCalendar() {
     let bodyHtml = `<div class="space-y-0.5 mt-0.5">`;
 
     if (holidayWinner) {
-      const code = getEmpCode(holidayWinner.winner_emp_id);
-      bodyHtml += `<div class="text-[9px] bg-purple-100 text-purple-900 font-bold px-1 rounded truncate">🥇國休:[${code}]</div>`;
+      const winnerName = holidayWinner.clinic_employees?.name || '';
+      bodyHtml += `<div class="text-[9px] bg-purple-100 text-purple-900 font-bold px-1 rounded truncate">🥇國定休:${winnerName}</div>`;
     }
 
     const abroadReqs = dayRequests.filter(r => r.request_type === 'abroad');
     if (abroadReqs.length > 0) {
-      const aNames = abroadReqs.map(r => `[${getEmpCode(r.employee_id)}]`).join(' ');
-      bodyHtml += `<div class="text-[9px] bg-purple-50 text-purple-800 font-bold px-1 rounded truncate">🥈出國:${aNames}</div>`;
+      const aNames = abroadReqs.map(r => `[${getEmpCode(r.clinic_employees || r.employee_id)}]`).join(' ');
+      bodyHtml += `<div class="text-[9px] bg-purple-600 text-white font-bold px-1 rounded truncate">✈️出國:${aNames}</div>`;
     }
 
     const generalOffs = dayRequests.filter(r => r.request_type === 'off');
     if (generalOffs.length > 0) {
-      const offNames = generalOffs.map(r => `[${getEmpCode(r.employee_id)}]`).join(' ');
+      const offNames = generalOffs.map(r => `[${getEmpCode(r.clinic_employees || r.employee_id)}]`).join(' ');
       bodyHtml += `<div class="text-[9px] bg-rose-100 text-rose-800 font-bold px-1 rounded truncate">🏖️排休:${offNames}</div>`;
     }
 
     const workSchedules = daySchedules.filter(s => s.shift_name && s.shift_name !== '未排班' && s.shift_name !== '休假');
     if (workSchedules.length > 0) {
       const summaryList = workSchedules.map(s => {
-        const code = getEmpCode(s.employee_id);
+        const code = getEmpCode(s.clinic_employees || s.employee_id);
         const shortShift = s.shift_name.replace('班', '').replace('正常', '');
         return `[${code}]${shortShift}${s.hours}h`;
       }).join(' ');
@@ -670,19 +675,12 @@ function openShiftEditModal(dateStr, dayOfWeek, holiday, holidayWinner, dayReque
   editingDate = dateStr;
   document.getElementById('modal-date-title').innerText = `📅 ${dateStr} ${holiday ? `(🎌${holiday.name})` : ''} 排班`;
 
-  const currentDateObj = new Date(dateStr);
-  const prevDateObj = new Date(currentDateObj.getTime() - 86400000);
-  const prevDateStr = prevDateObj.toISOString().split('T')[0];
-
   let priorityHints = [];
-  if (holidayWinner) {
-    const wCode = getEmpCode(holidayWinner.winner_emp_id);
-    priorityHints.push(`🥇 國定抽中輪休：[${wCode}]`);
-  }
-  const abroads = (dayRequests || []).filter(r => r.request_type === 'abroad').map(r => `[${getEmpCode(r.employee_id)}]`);
-  if (abroads.length > 0) priorityHints.push(`🥈 出國休假：${abroads.join(' ')}`);
-  const regularOffs = (dayRequests || []).filter(r => r.request_type === 'off').map(r => `[${getEmpCode(r.employee_id)}]`);
-  if (regularOffs.length > 0) priorityHints.push(`🏖️ 一般排休/特休：${regularOffs.join(' ')}`);
+  if (holidayWinner) priorityHints.push(`🥇 國定抽中輪休：${holidayWinner.clinic_employees?.name || ''}`);
+  const abroads = (dayRequests || []).filter(r => r.request_type === 'abroad').map(r => r.clinic_employees?.name || '');
+  if (abroads.length > 0) priorityHints.push(`🥈 出國休假：${abroads.join('、')}`);
+  const regularOffs = (dayRequests || []).filter(r => r.request_type === 'off').map(r => r.clinic_employees?.name || '');
+  if (regularOffs.length > 0) priorityHints.push(`🏖️ 一般排休/特休：${regularOffs.join('、')}`);
 
   document.getElementById('modal-priority-hint').innerText = priorityHints.join(' | ') || '無登記休假同仁';
 
@@ -696,17 +694,13 @@ function openShiftEditModal(dateStr, dayOfWeek, holiday, holidayWinner, dayReque
     const existing = daySchedules.find(s => s.employee_id === emp.id);
     const code = getEmpCode(emp);
 
-    const prevDaySchedule = cachedMonthSchedules.find(s => s.employee_id === emp.id && s.date === prevDateStr);
-    const hadNightShiftYesterday = prevDaySchedule && prevDaySchedule.shift_name && prevDaySchedule.shift_name.includes('晚');
-
     const row = document.createElement('div');
     row.className = "flex items-center justify-between gap-1 p-1.5 rounded-lg border border-slate-200 bg-slate-50";
 
     let shiftOptionsHtml = '';
     SHIFT_TYPES.forEach(st => {
       const selected = (existing && existing.shift_name === st) ? 'selected' : (!existing && st === '未排班' ? 'selected' : '');
-      const warningTag = (hadNightShiftYesterday && st === '開門白班') ? ' ⚠️間隔<11h' : '';
-      shiftOptionsHtml += `<option value="${st}" ${selected}>${st}${warningTag}</option>`;
+      shiftOptionsHtml += `<option value="${st}" ${selected}>${st}</option>`;
     });
 
     let hoursOptionsHtml = '';
@@ -716,7 +710,7 @@ function openShiftEditModal(dateStr, dayOfWeek, holiday, holidayWinner, dayReque
     });
 
     row.innerHTML = `
-      <span class="font-bold text-slate-800 w-28 truncate ${hadNightShiftYesterday ? 'text-amber-800' : ''}">[${code}] ${emp.name}</span>
+      <span class="font-bold text-slate-800 w-28 truncate">[${code}] ${emp.name}</span>
       <div class="flex items-center gap-1">
         <select data-emp-id="${emp.id}" class="nurse-shift-type-select border rounded p-1 bg-white font-bold text-xs">
           ${shiftOptionsHtml}
@@ -739,12 +733,14 @@ function closeShiftEditModal() {
 
 async function saveModalDaySchedule() {
   if (!editingDate) return;
+  const client = getHrSupabase();
+  if (!client) return;
 
   const shiftSelects = document.querySelectorAll('.nurse-shift-type-select');
   const hoursSelects = document.querySelectorAll('.nurse-hours-select');
 
   const dialysisNurseIds = cachedEmployees.filter(e => isDialysisNurse(e.name, e.role)).map(e => e.id);
-  await supabaseClient.from('clinic_schedules').delete().eq('date', editingDate).in('employee_id', dialysisNurseIds);
+  await client.from('clinic_schedules').delete().eq('date', editingDate).in('employee_id', dialysisNurseIds);
 
   const newRecords = [];
   shiftSelects.forEach((sel, idx) => {
@@ -764,7 +760,7 @@ async function saveModalDaySchedule() {
   });
 
   if (newRecords.length > 0) {
-    const { error } = await supabaseClient.from('clinic_schedules').insert(newRecords);
+    const { error } = await client.from('clinic_schedules').insert(newRecords);
     if (error) alert('儲存失敗：' + error.message);
   }
 
@@ -773,6 +769,9 @@ async function saveModalDaySchedule() {
 }
 
 async function runNationalHolidayLottery() {
+  const client = getHrSupabase();
+  if (!client) return;
+
   if (!confirm('確定由「透析輪班護理師」進行全年度 12 日政府國定假日抽籤輪休？（每人均休過一次後才重啟下一輪）')) return;
 
   const regularNurses = cachedEmployees.filter(e => isDialysisNurse(e.name, e.role) && e.name !== '陳慧倪' && e.name !== '陳惠倪');
@@ -797,13 +796,13 @@ async function runNationalHolidayLottery() {
     });
   });
 
-  const { error } = await supabaseClient.from('clinic_holiday_lottery').upsert(assignments);
+  const { error } = await client.from('clinic_holiday_lottery').upsert(assignments);
   if (error) alert('抽籤儲存失敗：' + error.message);
   else alert('🎉 2026 年度政府國定假日抽籤排定完成！');
   loadScheduleCalendar();
 }
 
-// ==================== 4. A4 橫向「緊湊雙欄月曆」排版與列印預覽引擎 ====================
+// ==================== 4. A4 橫向「月曆形式」排版與列印預覽 ====================
 function buildA4CalendarHtml(monthStr) {
   const [y, m] = monthStr.split('-').map(Number);
   const firstDayObj = new Date(y, m - 1, 1);
@@ -814,7 +813,7 @@ function buildA4CalendarHtml(monthStr) {
   let theadHtml = '<tr>';
   weekDays.forEach((wd, idx) => {
     const isSun = idx === 0;
-    theadHtml += `<th style="border: 1px solid #000; padding: 3px; font-size: 10.5px; background: ${isSun ? '#fee2e2' : '#f1f5f9'}; color: ${isSun ? '#b91c1c' : '#0f172a'}; width: 14.28%; text-align: center;">${wd}</th>`;
+    theadHtml += `<th style="border: 1px solid #000; padding: 4px; font-size: 11px; background: ${isSun ? '#fee2e2' : '#f1f5f9'}; color: ${isSun ? '#b91c1c' : '#0f172a'}; width: 14.28%; text-align: center;">${wd}</th>`;
   });
   theadHtml += '</tr>';
 
@@ -823,7 +822,7 @@ function buildA4CalendarHtml(monthStr) {
   let cellCount = 0;
 
   for (let i = 0; i < startDayOfWeek; i++) {
-    tbodyHtml += `<td style="border: 1px solid #000; background: #fafafa;"></td>`;
+    tbodyHtml += `<td style="border: 1px solid #000; background: #fafafa; min-height: 82px;"></td>`;
     cellCount++;
   }
 
@@ -842,40 +841,40 @@ function buildA4CalendarHtml(monthStr) {
     const isSun = dayOfWeek === 0;
     const bgStyle = holiday ? 'background: #fff1f2;' : (isSun ? 'background: #f8fafc;' : 'background: #ffffff;');
 
-    let cellContent = `<div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dotted #94a3b8; padding-bottom: 1px; margin-bottom: 2px;">`;
-    cellContent += `<span style="font-weight: 900; font-size: 11px; color: ${isSun || holiday ? '#dc2626' : '#0f172a'};">${dayCounter}</span>`;
+    let cellContent = `<div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dotted #94a3b8; padding-bottom: 2px; margin-bottom: 3px;">`;
+    cellContent += `<span style="font-weight: 900; font-size: 12px; color: ${isSun || holiday ? '#dc2626' : '#0f172a'};">${dayCounter}</span>`;
     if (holiday) {
-      cellContent += `<span style="font-size: 7.5px; font-weight: bold; background: #e11d48; color: #fff; padding: 0.5px 2.5px; border-radius: 2px;">${holiday.name}</span>`;
+      cellContent += `<span style="font-size: 8px; font-weight: bold; background: #e11d48; color: #fff; padding: 0.5px 3px; border-radius: 3px;">${holiday.name}</span>`;
     } else if (isSun) {
-      cellContent += `<span style="font-size: 7.5px; color: #64748b;">休診</span>`;
+      cellContent += `<span style="font-size: 8px; color: #64748b;">休診</span>`;
     }
     cellContent += `</div>`;
 
-    cellContent += `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1px 2px; font-size: 8px; line-height: 1.15; font-family: monospace; min-height: 48px;">`;
+    cellContent += `<div style="font-size: 9px; line-height: 1.25; min-height: 52px; font-family: monospace;">`;
 
     if (holidayWon) {
-      const code = getEmpCode(holidayWinner.winner_emp_id);
-      cellContent += `<div style="grid-column: span 2; color: #7e22ce; font-weight: bold;">[國休] [${code}]</div>`;
+      const winnerName = holidayWon.clinic_employees?.name || '';
+      cellContent += `<div style="color: #7e22ce; font-weight: bold;">[國休] ${winnerName}</div>`;
     }
 
     if (daySchedules.length > 0) {
       daySchedules.forEach(s => {
-        const code = getEmpCode(s.employee_id);
+        const code = getEmpCode(s.clinic_employees || { name: s.employee_id });
         const shortShift = s.shift_name.replace('班', '').replace('正常', '');
         const shiftColor = s.shift_name.includes('開門') ? '#b45309' : (s.shift_name.includes('晚') ? '#4338ca' : '#0369a1');
-        cellContent += `<div style="color: ${shiftColor}; font-weight: bold; white-space: nowrap;">[${code}]${shortShift}${s.hours}h</div>`;
+        cellContent += `<div style="color: ${shiftColor}; font-weight: bold;">[${code}] ${shortShift} ${s.hours}h</div>`;
       });
     }
 
     if (dayOffReqs.length > 0) {
-      const offCodes = dayOffReqs.map(r => `[${getEmpCode(r.employee_id)}]`).join('');
-      cellContent += `<div style="grid-column: span 2; color: #be123c; font-weight: bold;">[排休] ${offCodes}</div>`;
+      const offCodes = dayOffReqs.map(r => getEmpCode(r.clinic_employees || { name: r.employee_id })).join(',');
+      cellContent += `<div style="color: #be123c;">[排休] ${offCodes}</div>`;
     }
 
+    cellContent += `<div style="height: 14px; margin-top: 2px; border-top: 1px dashed #e2e8f0;"></div>`;
     cellContent += `</div>`;
-    cellContent += `<div style="height: 10px; margin-top: 1px; border-top: 1px dashed #cbd5e1;"></div>`;
 
-    tbodyHtml += `<td style="border: 1px solid #000; padding: 2px; vertical-align: top; width: 14.28%; ${bgStyle}">${cellContent}</td>`;
+    tbodyHtml += `<td style="border: 1px solid #000; padding: 3px; vertical-align: top; width: 14.28%; ${bgStyle}">${cellContent}</td>`;
 
     dayCounter++;
     cellCount++;
@@ -889,12 +888,12 @@ function buildA4CalendarHtml(monthStr) {
 
   return `
     <div style="font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; color: black; width: 100%; max-width: 1000px; margin: 0 auto;">
-      <div style="display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid black; padding-bottom: 2px; margin-bottom: 3px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid black; padding-bottom: 3px; margin-bottom: 4px;">
         <div>
-          <h2 style="font-size: 15px; font-weight: 900; margin: 0; letter-spacing: 0.5px;">🏥 愛欣診所透析中心 - 護理人員出勤班表</h2>
-          <span style="font-size: 10.5px; font-weight: bold; color: #334155;">排班月份：${monthStr} ｜ 護理長：陳慧倪</span>
+          <h2 style="font-size: 16px; font-weight: 900; margin: 0; letter-spacing: 1px;">🏥 愛欣診所透析中心 - 護理人員出勤班表</h2>
+          <span style="font-size: 11px; font-weight: bold; color: #334155;">排班月份：${monthStr} ｜ 護理長：陳慧倪</span>
         </div>
-        <div style="font-size: 8.5px; color: #334155; text-align: right; line-height: 1.15;">
+        <div style="font-size: 9.5px; color: #334155; text-align: right; line-height: 1.2;">
           班別：開白(開門白班)、白(正常白班)、晚(正常晚班)<br>
           產表日期：${new Date().toLocaleDateString('zh-TW')}
         </div>
@@ -905,7 +904,7 @@ function buildA4CalendarHtml(monthStr) {
         <tbody>${tbodyHtml}</tbody>
       </table>
 
-      <div style="display: flex; justify-content: space-between; font-size: 10px; margin-top: 6px; font-weight: bold; padding-top: 2px;">
+      <div style="display: flex; justify-content: space-between; font-size: 10.5px; margin-top: 8px; font-weight: bold; padding-top: 4px;">
         <span>護理長簽核：陳慧倪 ____________________</span>
         <span>院長 / 醫師簽核：林和正 ____________________</span>
         <span>備註 / 異動紀錄：____________________</span>
@@ -945,8 +944,8 @@ function openInExternalBrowser() {
       <head>
         <title>愛欣診所出勤月曆_${monthStr}</title>
         <style>
-          @page { size: A4 landscape; margin: 4mm; }
-          body { margin: 0; padding: 2px; background: white; font-family: -apple-system, sans-serif; }
+          @page { size: A4 landscape; margin: 5mm; }
+          body { margin: 0; padding: 4px; background: white; font-family: -apple-system, sans-serif; }
         </style>
       </head>
       <body>
