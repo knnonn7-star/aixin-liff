@@ -77,7 +77,7 @@ function updateClock() {
   if (timeElem) timeElem.innerText = now.toTimeString().split(' ')[0];
 }
 
-// ==================== 主頁面切換與打卡 ====================
+// ==================== 主頁面切換 ====================
 function openMainSection(section) {
   document.getElementById('sec-main-home')?.classList.add('hidden');
   document.getElementById('sub-page-header')?.classList.remove('hidden');
@@ -119,28 +119,51 @@ async function syncEmployeeRecord() {
   }
 }
 
+// ==================== 打卡核心邏輯（限制每日一次上班、一次下班） ====================
 async function punchAttendance(type) {
   const btn = document.getElementById(`btn-punch-${type}`);
   if (btn) btn.disabled = true;
 
   try {
+    if (!currentUser.empId) await syncEmployeeRecord();
+
+    // 1. 檢查今日是否已存在該類型的打卡紀錄
+    const { startOfDay, endOfDay } = getTaipeiDayRange();
+    const { data: existRecords, error: checkError } = await supabaseClient
+      .from('clinic_attendance')
+      .select('punch_type, created_at, punch_time')
+      .eq('employee_id', currentUser.empId)
+      .eq('punch_type', type)
+      .gte('created_at', startOfDay)
+      .lte('created_at', endOfDay);
+
+    if (!checkError && existRecords && existRecords.length > 0) {
+      const typeText = type === 'in' ? '上班' : '下班';
+      const lastPunchTime = new Date(existRecords[0].created_at || existRecords[0].punch_time).toLocaleTimeString('zh-TW', {
+        timeZone: 'Asia/Taipei',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      alert(`⚠️ 您今日已經完成「${typeText}打卡」（時間：${lastPunchTime}），每日限打卡一次！`);
+      return;
+    }
+
     const statusElem = document.getElementById('gps-status');
     if (statusElem) statusElem.innerText = '📍 取得即時定位中...';
 
-    // 1. 強制等待獲取當前即時座標
+    // 2. 強制等待獲取當前即時座標
     const locationData = await refreshGpsLocation();
 
-    // 2. 判斷是否在診所範圍內
+    // 3. 判斷是否超出診所半徑 (300公尺)
     if (locationData.dist > CLINIC_LOCATION.radiusMeters) {
       alert(`❌ 打卡失敗！\n您目前距離愛欣診所約 ${Math.round(locationData.dist)} 公尺。\n超出允許打卡半徑 (${CLINIC_LOCATION.radiusMeters} 公尺)。`);
       return;
     }
 
-    if (!currentUser.empId) await syncEmployeeRecord();
-
     const nowTime = new Date();
     const isLate = (type === 'in' && (nowTime.getHours() > 8 || (nowTime.getHours() === 8 && nowTime.getMinutes() > 10)));
 
+    // 4. 寫入資料庫
     const { error } = await supabaseClient.from('clinic_attendance').insert([{
       employee_id: currentUser.empId,
       punch_type: type,
@@ -160,6 +183,7 @@ async function punchAttendance(type) {
     } else {
       alert(`✅ ${type === 'in' ? '上班' : '下班'}打卡成功！\n時間：${nowTime.toLocaleTimeString('zh-TW')}`);
     }
+
     await loadTodayAttendance();
   } catch (err) {
     alert('打卡失敗：' + (err.message || '無法取得 GPS 定位，請確認手機設定允許 LINE 取用位置'));
@@ -202,18 +226,15 @@ async function loadTodayAttendance() {
   }
 }
 
-// ==================== 全系統啟動入口 (核心修復) ====================
+// ==================== 全系統啟動入口 ====================
 async function startApp() {
-  // 1. 時鐘立刻開始跳動
   updateClock();
   setInterval(updateClock, 1000);
 
-  // 2. 觸發背景定位
   refreshGpsLocation().catch(e => console.log('GPS 初始獲取略過:', e));
 
   const userElem = document.getElementById('user-name');
 
-  // 3. LINE LIFF 初始化
   try {
     await liff.init({ liffId: LIFF_ID });
     if (!liff.isLoggedIn()) {
@@ -235,7 +256,6 @@ async function startApp() {
   }
 }
 
-// 確保網頁載入後立即啟動
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', startApp);
 } else {
