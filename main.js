@@ -1,4 +1,4 @@
-// ==================== 系統全域變數 ====================
+// ==================== 全域共用狀態 ====================
 let currentUser = { lineUserId: '', displayName: '林和正', empId: null, role: 'doctor' };
 let currentGps = { lat: null, lng: null };
 
@@ -27,11 +27,11 @@ function getTaipeiDayRange() {
   return { localDateStr, startOfDay, endOfDay };
 }
 
-// 封裝 GPS 定位等待，確保取得最新座標
+// 封裝 GPS 為 Promise，打卡時強制等待精確座標
 function getCurrentPositionPromise() {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
-      reject(new Error("此裝置或瀏覽器不支援 GPS 定位"));
+      reject(new Error("裝置不支援 GPS 定位"));
       return;
     }
     navigator.geolocation.getCurrentPosition(
@@ -62,7 +62,7 @@ async function refreshGpsLocation() {
     return { lat: currentGps.lat, lng: currentGps.lng, dist };
   } catch (err) {
     if (statusElem) {
-      statusElem.innerText = "📍 請開啟精確定位權限";
+      statusElem.innerText = "📍 請允許精確定位權限";
       statusElem.className = "bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full text-[10px] font-bold";
     }
     throw err;
@@ -77,7 +77,7 @@ function updateClock() {
   if (timeElem) timeElem.innerText = now.toTimeString().split(' ')[0];
 }
 
-// ==================== 主頁面切換 ====================
+// ==================== 主頁面切換與打卡 ====================
 function openMainSection(section) {
   document.getElementById('sec-main-home')?.classList.add('hidden');
   document.getElementById('sub-page-header')?.classList.remove('hidden');
@@ -119,7 +119,6 @@ async function syncEmployeeRecord() {
   }
 }
 
-// ==================== 打卡核心邏輯 ====================
 async function punchAttendance(type) {
   const btn = document.getElementById(`btn-punch-${type}`);
   if (btn) btn.disabled = true;
@@ -127,23 +126,21 @@ async function punchAttendance(type) {
   try {
     const statusElem = document.getElementById('gps-status');
     if (statusElem) statusElem.innerText = '📍 取得即時定位中...';
-    
-    // 1. 等待 GPS 取得當前位置
+
+    // 1. 強制等待獲取當前即時座標
     const locationData = await refreshGpsLocation();
-    
-    // 2. 檢查距離是否在診所範圍內
+
+    // 2. 判斷是否在診所範圍內
     if (locationData.dist > CLINIC_LOCATION.radiusMeters) {
-      alert(`❌ 打卡失敗！\n您目前距離愛欣診所約 ${Math.round(locationData.dist)} 公尺。\n超出允許打卡範圍 (${CLINIC_LOCATION.radiusMeters} 公尺)。`);
+      alert(`❌ 打卡失敗！\n您目前距離愛欣診所約 ${Math.round(locationData.dist)} 公尺。\n超出允許打卡半徑 (${CLINIC_LOCATION.radiusMeters} 公尺)。`);
       return;
     }
 
-    // 3. 確認員工身分
     if (!currentUser.empId) await syncEmployeeRecord();
 
     const nowTime = new Date();
     const isLate = (type === 'in' && (nowTime.getHours() > 8 || (nowTime.getHours() === 8 && nowTime.getMinutes() > 10)));
 
-    // 4. 寫入資料庫
     const { error } = await supabaseClient.from('clinic_attendance').insert([{
       employee_id: currentUser.empId,
       punch_type: type,
@@ -159,17 +156,13 @@ async function punchAttendance(type) {
       alert(`⚠️ 打卡成功（遲到提醒）！\n時間：${nowTime.toLocaleTimeString('zh-TW')}\n依診所規定：遲到將扣減 1 次週六休假資格。`);
       try {
         await supabaseClient.rpc('increment_sat_deduction', { emp_id: currentUser.empId });
-      } catch (rpcErr) {
-        console.warn('RPC 略過:', rpcErr);
-      }
+      } catch (rpcErr) {}
     } else {
       alert(`✅ ${type === 'in' ? '上班' : '下班'}打卡成功！\n時間：${nowTime.toLocaleTimeString('zh-TW')}`);
     }
-
     await loadTodayAttendance();
   } catch (err) {
-    console.error(err);
-    alert('打卡失敗：' + (err.message || '無法取得 GPS 定位，請確認手機設定已允許 LINE 取用精確位置。'));
+    alert('打卡失敗：' + (err.message || '無法取得 GPS 定位，請確認手機設定允許 LINE 取用位置'));
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -209,33 +202,32 @@ async function loadTodayAttendance() {
   }
 }
 
-// ==================== 全系統啟動入口 ====================
-async function initLiff() {
-  setInterval(updateClock, 1000);
+// ==================== 全系統啟動入口 (核心修復) ====================
+async function startApp() {
+  // 1. 時鐘立刻開始跳動
   updateClock();
+  setInterval(updateClock, 1000);
 
-  refreshGpsLocation().catch(err => {
-    console.warn('初始定位等待打卡觸發:', err);
-  });
+  // 2. 觸發背景定位
+  refreshGpsLocation().catch(e => console.log('GPS 初始獲取略過:', e));
 
   const userElem = document.getElementById('user-name');
 
+  // 3. LINE LIFF 初始化
   try {
     await liff.init({ liffId: LIFF_ID });
     if (!liff.isLoggedIn()) {
       liff.login();
       return;
     }
-
     const profile = await liff.getProfile();
     currentUser.lineUserId = profile.userId;
     currentUser.displayName = profile.displayName;
-
     if (userElem) userElem.innerText = currentUser.displayName;
-
     await syncEmployeeRecord();
     await loadTodayAttendance();
   } catch (err) {
+    console.warn('LIFF 啟動降級為預設模式:', err);
     currentUser.displayName = "林和正";
     if (userElem) userElem.innerText = currentUser.displayName;
     await syncEmployeeRecord();
@@ -243,8 +235,9 @@ async function initLiff() {
   }
 }
 
+// 確保網頁載入後立即啟動
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initLiff);
+  document.addEventListener('DOMContentLoaded', startApp);
 } else {
-  initLiff();
+  startApp();
 }
