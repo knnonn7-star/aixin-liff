@@ -1,6 +1,5 @@
 /**
  * 愛欣診所 LINE 管理系統 - 主控制模組 (main.js)
- * 包含：LIFF 初始化相容層、Supabase 員工身分綁定與權限、GPS 定位打卡、主選單導航
  */
 
 // ==================== 全域狀態宣告 ====================
@@ -8,7 +7,7 @@ let currentUser = {
   lineUserId: '',
   displayName: '載入中...',
   empId: null,
-  role: 'guest' // 預設訪客身分，需透過資料庫驗證
+  role: 'guest'
 };
 
 let currentCoordinates = null;
@@ -21,9 +20,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await initLiff();
 });
 
-/**
- * 啟動頂部即時時鐘
- */
+// 即時時鐘
 function startClock() {
   const clockTimeElem = document.getElementById('clock-time');
   const clockDateElem = document.getElementById('clock-date');
@@ -31,7 +28,6 @@ function startClock() {
   function update() {
     const now = new Date();
     const days = ['日', '一', '二', '三', '四', '五', '六'];
-    
     if (clockDateElem) {
       clockDateElem.innerText = `${now.getFullYear()} 年 ${String(now.getMonth() + 1).padStart(2, '0')} 月 ${String(now.getDate()).padStart(2, '0')} 日 (週${days[now.getDay()]})`;
     }
@@ -39,43 +35,25 @@ function startClock() {
       clockTimeElem.innerText = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
     }
   }
-  
   update();
   setInterval(update, 1000);
 }
 
-/**
- * 取得 Supabase 實例（相容多種變數命名）
- */
-function getSupabaseClient() {
-  if (typeof supabaseClient !== 'undefined' && supabaseClient) return supabaseClient;
-  if (typeof supabase !== 'undefined' && supabase) return supabase;
-  if (typeof window.supabaseClient !== 'undefined') return window.supabaseClient;
-  return null;
+// 取得全域 Supabase 實例
+function getSupabase() {
+  return window.supabaseClient || (typeof supabaseClient !== 'undefined' ? supabaseClient : null);
 }
 
-/**
- * 取得 LIFF ID 設定（相容多種變數命名）
- */
-function getTargetLiffId() {
-  if (typeof LIFF_ID !== 'undefined' && LIFF_ID) return LIFF_ID;
-  if (typeof CONFIG !== 'undefined' && CONFIG.LIFF_ID) return CONFIG.LIFF_ID;
-  if (typeof window.LIFF_ID !== 'undefined') return window.LIFF_ID;
-  return '2006764506-9oJb0g4d'; // 愛欣診所預設 LIFF ID
-}
-
-/**
- * 初始化 LINE LIFF SDK
- */
+// 初始化 LINE LIFF SDK
 async function initLiff() {
   const userNameElem = document.getElementById('user-name');
-  
+  const targetLiffId = window.LIFF_ID || '2011071479-1rEMTEv0';
+
   try {
     if (typeof liff === 'undefined') {
-      throw new Error('LIFF SDK 尚未載入');
+      throw new Error('LIFF SDK 載入失敗');
     }
 
-    const targetLiffId = getTargetLiffId();
     await liff.init({ liffId: targetLiffId });
 
     if (!liff.isLoggedIn()) {
@@ -87,7 +65,7 @@ async function initLiff() {
     currentUser.lineUserId = profile.userId;
     currentUser.displayName = profile.displayName;
 
-    // 透過 LINE User ID 向 Supabase 同步真實員工資料與角色
+    // 向資料庫驗證並同步身分
     await syncEmployeeRecord();
 
     // 載入當日打卡狀態
@@ -101,18 +79,13 @@ async function initLiff() {
   }
 }
 
-/**
- * 依 LINE User ID 向 Supabase 驗證身分與角色 (淘汰純姓名比對)
- */
+// 依 LINE User ID 向 Supabase 查詢員工身分
 async function syncEmployeeRecord() {
   if (!currentUser.lineUserId) return;
 
   const userNameElem = document.getElementById('user-name');
-  const client = getSupabaseClient();
-  if (!client) {
-    console.error('Supabase Client 尚未就緒');
-    return;
-  }
+  const client = getSupabase();
+  if (!client) return;
 
   try {
     const { data, error } = await client
@@ -125,8 +98,8 @@ async function syncEmployeeRecord() {
 
     if (data && data.is_active) {
       currentUser.empId = data.id;
-      currentUser.displayName = data.name; // 以診所登錄的真實中文姓名為準
-      currentUser.role = data.role;        // doctor / nurse / counter
+      currentUser.displayName = data.name;
+      currentUser.role = data.role;
 
       const roleMap = {
         'doctor': '醫師',
@@ -143,42 +116,26 @@ async function syncEmployeeRecord() {
       currentUser.empId = null;
       currentUser.role = 'guest';
       if (userNameElem) {
-        userNameElem.innerText = `${currentUser.displayName || '使用者'} (未綁定/訪客)`;
+        userNameElem.innerText = `${currentUser.displayName || '使用者'} (未綁定)`;
       }
-      alert(`⚠️ 您的 LINE 帳號尚未完成員工綁定。\n您的 LINE ID 為：\n${currentUser.lineUserId}\n請將此代碼填入 clinic_employees 的 line_user_id 欄位。`);
+      alert(`⚠️ 您的 LINE 尚未綁定員工資料！\n您的 LINE ID 為：\n${currentUser.lineUserId}\n請將此代碼填入 Supabase clinic_employees 表。`);
     }
   } catch (err) {
-    console.error('員工身分同步失敗:', err);
-    if (userNameElem) {
-      userNameElem.innerText = `${currentUser.displayName} (同步失敗)`;
-    }
+    console.error('身分同步失敗:', err);
   }
 }
 
-// ==================== GPS 診所定位偵測 ====================
-function getClinicLocation() {
-  if (typeof CONFIG !== 'undefined' && CONFIG.CLINIC_LOCATION) {
-    return CONFIG.CLINIC_LOCATION;
-  }
-  if (typeof CLINIC_LOCATION !== 'undefined') {
-    return CLINIC_LOCATION;
-  }
-  // 預設愛欣診所座標
-  return { lat: 24.137126, lng: 120.686912, radius: 250 };
-}
-
+// GPS 定位偵測
 function startGpsTracking() {
   const gpsElem = document.getElementById('gps-status');
 
   if (!navigator.geolocation) {
-    if (gpsElem) {
-      gpsElem.innerText = '❌ 不支援定位';
-      gpsElem.className = 'bg-rose-200 text-rose-800 px-2 py-0.5 rounded-full text-[10px] font-bold';
-    }
+    if (gpsElem) gpsElem.innerText = '❌ 不支援定位';
     return;
   }
 
-  const clinicLoc = getClinicLocation();
+  const clinicLoc = window.CLINIC_LOCATION || { lat: 22.6309209, lng: 120.3392031, radiusMeters: 300 };
+  const radius = clinicLoc.radiusMeters || 300;
 
   gpsWatchId = navigator.geolocation.watchPosition(
     (pos) => {
@@ -195,7 +152,7 @@ function startGpsTracking() {
       );
 
       if (gpsElem) {
-        if (dist <= clinicLoc.radius) {
+        if (dist <= radius) {
           gpsElem.innerText = `📍 診所範圍內 (${Math.round(dist)}m)`;
           gpsElem.className = 'bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded-full text-[10px] font-bold';
         } else {
@@ -205,36 +162,26 @@ function startGpsTracking() {
       }
     },
     (err) => {
-      console.warn('GPS 定位失敗:', err.message);
-      if (gpsElem) {
-        gpsElem.innerText = '📍 無法取得定位';
-        gpsElem.className = 'bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full text-[10px] font-bold';
-      }
+      if (gpsElem) gpsElem.innerText = '📍 未開啟定位';
     },
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    { enableHighAccuracy: true, timeout: 8000 }
   );
 }
 
-// 計算兩點經緯度直線距離 (公尺)
 function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371e3;
   const φ1 = lat1 * Math.PI / 180;
   const φ2 = lat2 * Math.PI / 180;
   const Δφ = (lat2 - lat1) * Math.PI / 180;
   const Δλ = (lon2 - lon1) * Math.PI / 180;
-
-  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-            Math.cos(φ1) * Math.cos(φ2) *
-            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return R * c;
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// ==================== 出勤打卡邏輯 ====================
+// 查詢當日打卡狀態
 async function checkTodayAttendance() {
   const summaryElem = document.getElementById('today-punch-summary');
-  const client = getSupabaseClient();
+  const client = getSupabase();
   if (!currentUser.lineUserId || !summaryElem || !client) return;
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -269,38 +216,30 @@ async function checkTodayAttendance() {
     }
     summaryElem.innerText = text;
   } catch (err) {
-    console.error('讀取出勤紀錄失敗:', err);
+    console.error('出勤紀錄讀取失敗:', err);
   }
 }
 
+// 執行打卡動作
 async function punchAttendance(type) {
-  if (!currentUser.empId) {
-    alert('⚠️ 您的身分未綁定診所員工資料，無法打卡！請聯繫管理員。');
-    return;
-  }
-
-  const client = getSupabaseClient();
+  const client = getSupabase();
   if (!client) {
-    alert('資料庫連線失敗，請稍後再試！');
+    alert('資料庫連線失敗，請稍候重試！');
     return;
   }
 
-  const clinicLoc = getClinicLocation();
-  const enforceGps = (typeof CONFIG !== 'undefined' && typeof CONFIG.ENFORCE_GPS !== 'undefined') ? CONFIG.ENFORCE_GPS : false;
-
+  const enforceGps = window.ENFORCE_GPS || false;
   if (enforceGps) {
+    const clinicLoc = window.CLINIC_LOCATION || { lat: 22.6309209, lng: 120.3392031, radiusMeters: 300 };
+    const radius = clinicLoc.radiusMeters || 300;
+
     if (!currentCoordinates) {
-      alert('⚠️ 尚未取得您的定位資訊，請開啟手機 GPS 後重試。');
+      alert('⚠️ 尚未取得 GPS 定位，請開啟手機定位！');
       return;
     }
-    const dist = calculateDistance(
-      currentCoordinates.lat,
-      currentCoordinates.lng,
-      clinicLoc.lat,
-      clinicLoc.lng
-    );
-    if (dist > clinicLoc.radius) {
-      alert(`⚠️ 打卡失敗！您目前距離診所約 ${Math.round(dist)} 公尺，超出打卡範圍 (${clinicLoc.radius}m)。`);
+    const dist = calculateDistance(currentCoordinates.lat, currentCoordinates.lng, clinicLoc.lat, clinicLoc.lng);
+    if (dist > radius) {
+      alert(`⚠️ 超出打卡範圍！目前距離診所約 ${Math.round(dist)} 公尺。`);
       return;
     }
   }
@@ -310,9 +249,9 @@ async function punchAttendance(type) {
 
   try {
     const { error } = await client.from('clinic_attendance').insert([{
-      line_user_id: currentUser.lineUserId,
-      employee_id: currentUser.empId,
-      employee_name: currentUser.displayName,
+      line_user_id: currentUser.lineUserId || 'manual_user',
+      employee_id: currentUser.empId || null,
+      employee_name: currentUser.displayName || '診所同仁',
       punch_type: type,
       punch_time: new Date().toISOString(),
       lat: currentCoordinates ? currentCoordinates.lat : null,
@@ -324,12 +263,12 @@ async function punchAttendance(type) {
     alert(`🎉【${typeName}】打卡成功！`);
     await checkTodayAttendance();
   } catch (err) {
-    console.error('打卡失敗:', err);
+    console.error('打卡寫入失敗:', err);
     alert('打卡失敗：' + err.message);
   }
 }
 
-// ==================== 頁面導航與切換 ====================
+// 頁面導航
 function openMainSection(secKey) {
   document.getElementById('sec-main-home').classList.add('hidden');
   document.getElementById('sub-page-header').classList.remove('hidden');
