@@ -553,9 +553,16 @@
 
 
   <!-- ==================== 模組化 JS 引入順序 ==================== -->
-  <script src="config.js"></script>
-  <script src="hr.js"></script>
-  <script src="finance.js"></script>
-  <script src="main.js"></script>
+  <!-- 1. 全域設定與 Supabase 初始化 -->
+  <script src="config.js?v=20260818_1"></script>
+  
+  <!-- 2. 人事排班與 A4 橫向列印模組 -->
+  <script src="hr.js?v=20260818_1"></script>
+  
+  <!-- 3. 衛材進貨、發票 OCR 與財務月報模組 -->
+  <script src="finance.js?v=20260818_1"></script>
+  
+  <!-- 4. 主程式、GPS 定位與 LIFF 生命週期（負責觸發 init） -->
+  <script src="main.js?v=20260818_1"></script>
 </body>
 </html>
