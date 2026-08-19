@@ -78,7 +78,7 @@
             <span class="text-2xl">🏢</span>
             <div class="text-left">
               <div class="text-sm font-bold">人事管理系統</div>
-              <div class="text-[11px] text-indigo-100 font-normal">法定假期統計、全員預約看板、護理長排班與A4列印</div>
+              <div class="text-[11px] text-indigo-100 font-normal">個人結算、全員預約看板、AI輔助排班與自訂規則</div>
             </div>
           </div>
           <span class="text-base group-hover:translate-x-1 transition-transform">➔</span>
@@ -113,30 +113,30 @@
         <button id="hr-tab-scheduling" onclick="switchHrTab('scheduling')" class="py-2 rounded-lg hover:text-slate-900 transition">👩‍⚕️ 護理長排班</button>
       </div>
 
-      <!-- 子頁 1：我的班表與假期餘額結算 -->
+      <!-- 子頁 1：我的班表與假期時數精準結算 -->
       <div id="hr-sec-myschedule" class="space-y-3">
         <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-xs space-y-2">
           <div class="flex justify-between items-center border-b border-indigo-200/60 pb-1.5">
-            <span class="font-bold text-indigo-900">📊 個人法定假期與工時統計</span>
-            <span id="my-seniority-text" class="text-[10px] text-indigo-700 font-medium">到職日計算中...</span>
+            <span class="font-bold text-indigo-900">📊 個人特休與時數結算 (週年制)</span>
+            <span id="my-seniority-text" class="text-[10px] text-indigo-700 font-medium">到職結算日計算中...</span>
           </div>
           <div class="grid grid-cols-3 gap-2 text-center">
             <div class="bg-white p-2 rounded-lg border border-indigo-100">
-              <span class="text-[10px] text-slate-500">已用特休</span>
-              <p id="stat-special-leave" class="font-black text-indigo-700 text-xs">0 / 0日</p>
+              <span class="text-[10px] text-slate-500">法定總特休</span>
+              <p id="stat-special-leave" class="font-black text-indigo-700 text-xs">0 日</p>
             </div>
             <div class="bg-white p-2 rounded-lg border border-indigo-100">
-              <span class="text-[10px] text-slate-500">國定輪休</span>
-              <p id="stat-national-leave" class="font-black text-purple-700 text-xs">0 / 12日</p>
+              <span class="text-[10px] text-slate-500">剩餘可休特休</span>
+              <p id="stat-remaining-special" class="font-black text-emerald-700 text-xs">0 日</p>
             </div>
             <div class="bg-white p-2 rounded-lg border border-indigo-100">
-              <span class="text-[10px] text-slate-500">變形工時折抵</span>
-              <p id="stat-hours-offset-days" class="font-black text-emerald-700 text-xs">+0.0日</p>
+              <span class="text-[10px] text-slate-500">本月應上負時數</span>
+              <p id="stat-required-hours" class="font-black text-rose-700 text-xs">-0 小時</p>
             </div>
           </div>
-          <div class="flex justify-between items-center pt-1 text-[11px] font-bold text-slate-700">
-            <span>本月總工時：<strong id="my-total-hours" class="text-indigo-700">0 小時</strong></span>
-            <span>可用假期結餘：<strong id="my-remaining-total-days" class="text-rose-600">0 天</strong></span>
+          <div class="flex justify-between items-center pt-1 text-[11px] font-bold text-slate-700 border-t border-indigo-200/40">
+            <span>本月實作工時：<strong id="my-total-hours" class="text-indigo-700">0 h</strong></span>
+            <span>下月累積休時數：<strong id="my-remaining-total-days" class="text-purple-700">0.0 h</strong></span>
           </div>
         </div>
 
@@ -155,7 +155,7 @@
         </div>
       </div>
 
-      <!-- 子頁 2：全員預約看板 -->
+      <!-- 子頁 2：全員預約看板 (排休/出國/夜班) -->
       <div id="hr-sec-request" class="hidden space-y-3">
         <div class="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs">
           <div class="flex items-center gap-1.5">
@@ -172,7 +172,7 @@
         </div>
       </div>
 
-      <!-- 子頁 3：護理長排班中心 -->
+      <!-- 子頁 3：護理長排班中心 (AI 智慧排班與自訂規則) -->
       <div id="hr-sec-scheduling" class="hidden space-y-3">
         <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2.5 text-xs">
           <div class="flex justify-between items-center">
@@ -185,12 +185,21 @@
 
           <div class="flex flex-wrap gap-1.5" id="nurse-code-tags"></div>
 
-          <div class="flex gap-2 pt-1 border-t border-slate-200">
-            <button onclick="runNationalHolidayLottery()" class="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 rounded-lg text-xs shadow-sm">
-              🎰 國定假日 12 日輪抽
+          <!-- 自訂排班邏輯規則空位欄 -->
+          <div class="space-y-1 pt-1 border-t border-slate-200">
+            <div class="flex justify-between items-center">
+              <label class="font-bold text-slate-700">📜 排班邏輯設定 (護理長可自訂)：</label>
+              <button onclick="saveSchedulingRules()" class="text-indigo-600 font-bold text-[10px] bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200 hover:bg-indigo-100">💾 儲存規則</button>
+            </div>
+            <textarea id="custom-scheduling-rules" rows="4" class="w-full p-2 border border-slate-300 rounded-lg text-[11px] bg-white font-mono leading-tight focus:ring-1 focus:ring-indigo-500" placeholder="請填寫排班規則..."></textarea>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 pt-1">
+            <button onclick="runAiAutoScheduling()" class="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-2 rounded-lg text-xs shadow-sm flex items-center justify-center gap-1">
+              <span>🤖</span> AI 智慧排班 (15號後整合)
             </button>
-            <button onclick="openA4PrintPreview()" class="flex-1 bg-slate-800 hover:bg-slate-900 text-white font-bold py-2 rounded-lg text-xs shadow-sm">
-              🖨️ A4 班表列印預覽
+            <button onclick="openA4PrintPreview()" class="bg-slate-800 hover:bg-slate-900 text-white font-bold py-2 rounded-lg text-xs shadow-sm flex items-center justify-center gap-1">
+              <span>🖨️</span> A4 班表列印預覽
             </button>
           </div>
         </div>
@@ -203,7 +212,7 @@
         </div>
 
         <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 text-xs">
-          <h4 class="font-bold text-slate-700">⏱️ 本月護理同仁工時累計</h4>
+          <h4 class="font-bold text-slate-700">⏱️ 本月護理同仁工時累計與週六出勤次數</h4>
           <div id="nurse-hours-summary" class="grid grid-cols-2 md:grid-cols-4 gap-1.5"></div>
         </div>
       </div>
@@ -335,26 +344,29 @@
 
   </div>
 
-  <!-- 排休預約 Modal -->
+  <!-- 排休/出國/夜班 預約 Modal -->
   <div id="user-req-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
     <div class="bg-white rounded-2xl max-w-sm w-full p-4 shadow-2xl space-y-3">
       <div class="flex justify-between items-center border-b pb-1.5">
-        <h3 class="text-xs font-bold text-slate-800" id="user-req-date-title">📅 排休登記</h3>
+        <h3 class="text-xs font-bold text-slate-800" id="user-req-date-title">📅 排班預約登記</h3>
         <button onclick="closeUserReqModal()" class="text-slate-400 font-bold p-1">✕</button>
       </div>
       <div class="space-y-2 text-xs">
-        <label class="block font-semibold text-slate-600">休假/排休類型：</label>
-        <div class="grid grid-cols-2 gap-2">
-          <label class="flex items-center p-2 border rounded-lg cursor-pointer bg-slate-50 font-bold">
-            <input type="radio" name="user-req-type" value="off" checked class="mr-1.5"> 🏖️ 排休 / 特休
+        <label class="block font-semibold text-slate-600">預約項目類型：</label>
+        <div class="grid grid-cols-3 gap-1.5">
+          <label class="flex flex-col items-center justify-center p-2 border rounded-lg cursor-pointer bg-slate-50 font-bold text-[11px] text-center">
+            <input type="radio" name="user-req-type" value="off" checked class="mb-1"> 🏖️ 排休/特休
           </label>
-          <label id="user-req-abroad-opt" class="flex items-center p-2 border rounded-lg cursor-pointer bg-purple-50 text-purple-900 font-bold">
-            <input type="radio" name="user-req-type" value="abroad" class="mr-1.5"> ✈️ 出國 (優先)
+          <label id="user-req-abroad-opt" class="flex flex-col items-center justify-center p-2 border rounded-lg cursor-pointer bg-purple-50 text-purple-900 font-bold text-[11px] text-center">
+            <input type="radio" name="user-req-type" value="abroad" class="mb-1"> ✈️ 出國行程
+          </label>
+          <label id="user-req-night-opt" class="flex flex-col items-center justify-center p-2 border rounded-lg cursor-pointer bg-indigo-50 text-indigo-900 font-bold text-[11px] text-center">
+            <input type="radio" name="user-req-type" value="night_only" class="mb-1"> 🌙 只上夜班
           </label>
         </div>
         <div>
           <label class="block font-semibold text-slate-600 mb-0.5">備註說明 (選填)：</label>
-          <input type="text" id="user-req-reason" placeholder="如：家庭旅遊" class="w-full p-2 border rounded-lg bg-white">
+          <input type="text" id="user-req-reason" placeholder="如：特休出遊、夜班配合" class="w-full p-2 border rounded-lg bg-white">
         </div>
       </div>
       <div class="flex gap-2 pt-1">
@@ -364,11 +376,11 @@
     </div>
   </div>
 
-  <!-- 排班編輯 Modal -->
+  <!-- 排班編輯與打卡工時補正 Modal -->
   <div id="shift-edit-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
     <div class="bg-white rounded-2xl max-w-md w-full p-4 shadow-2xl space-y-3 max-h-[90vh] flex flex-col">
       <div class="flex justify-between items-center border-b pb-1.5">
-        <h3 class="text-xs font-bold text-slate-800" id="modal-date-title">📅 排班與出勤明細</h3>
+        <h3 class="text-xs font-bold text-slate-800" id="modal-date-title">📅 排班與出勤工時明細</h3>
         <button onclick="closeShiftEditModal()" class="text-slate-400 font-bold p-1">✕</button>
       </div>
       <div id="modal-priority-hint" class="text-[10px] bg-amber-50 border border-amber-200 p-2 rounded-lg text-amber-900 font-medium whitespace-pre-line"></div>
@@ -395,10 +407,10 @@
     </div>
   </div>
 
-  <!-- 引用模組化 JS -->
-  <script src="config.js?v=20260819_1200"></script>
-  <script src="hr.js?v=20260819_1200"></script>
-  <script src="finance.js?v=20260819_1200"></script>
-  <script src="main.js?v=20260819_1200"></script>
+  <!-- 模組化 JS 引入 -->
+  <script src="config.js?v=20260819_1800"></script>
+  <script src="hr.js?v=20260819_1800"></script>
+  <script src="finance.js?v=20260819_1800"></script>
+  <script src="main.js?v=20260819_1800"></script>
 </body>
 </html>
