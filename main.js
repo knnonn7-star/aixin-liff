@@ -1,9 +1,8 @@
 /**
  * 愛欣診所 LINE 管理系統 - 主控制模組 (main.js)
- * 包含：LIFF 初始化、精確身分同步、GPS 100m 打卡、班表連動遲到判定、每日限制單次打卡
+ * 包含：LIFF 初始化、身分同步、100m GPS 打卡、班表連動遲到判定、每日限制單次打卡
  */
 
-// ==================== 全域狀態宣告 ====================
 let currentUser = {
   lineUserId: '',
   displayName: '載入中...',
@@ -14,7 +13,6 @@ let currentUser = {
 let currentCoordinates = null;
 let gpsWatchId = null;
 
-// ==================== 頁面載入與啟動 ====================
 document.addEventListener('DOMContentLoaded', async () => {
   startClock();
   startGpsTracking();
@@ -40,10 +38,7 @@ function startClock() {
 }
 
 function getSupabaseClient() {
-  if (typeof window.supabaseClient !== 'undefined' && window.supabaseClient) return window.supabaseClient;
-  if (typeof supabaseClient !== 'undefined' && supabaseClient) return supabaseClient;
-  if (typeof supabase !== 'undefined' && supabase) return supabase;
-  return null;
+  return window.supabaseClient || (typeof supabaseClient !== 'undefined' ? supabaseClient : null);
 }
 
 function getTargetLiffId() {
@@ -113,14 +108,13 @@ async function syncEmployeeRecord() {
       currentUser.empId = null;
       currentUser.role = 'guest';
       if (userNameElem) userNameElem.innerText = `${currentUser.displayName || '使用者'} (未綁定)`;
-      alert(`⚠️ 您的 LINE 尚未綁定！\n代碼：${currentUser.lineUserId}\n請將此代碼設定於 clinic_employees 表。`);
+      alert(`⚠️ 您的 LINE 尚未綁定！\n代碼：${currentUser.lineUserId}\n請將此代碼填入 clinic_employees。`);
     }
   } catch (err) {
     console.error('身分同步失敗:', err);
   }
 }
 
-// ==================== GPS 診所 100m 定位偵測 ====================
 function getClinicLocation() {
   return window.CLINIC_LOCATION || {
     lat: 22.6309209,
@@ -182,7 +176,6 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// ==================== 出勤查詢與單日限制 ====================
 async function checkTodayAttendance() {
   const summaryElem = document.getElementById('today-punch-summary');
   const client = getSupabaseClient();
@@ -247,7 +240,6 @@ async function checkTodayAttendance() {
   }
 }
 
-// ==================== 執行打卡（班表連動與限制單次） ====================
 async function punchAttendance(type) {
   const client = getSupabaseClient();
   if (!client) {
@@ -389,7 +381,6 @@ async function punchAttendance(type) {
   }
 }
 
-// 頁面導航
 function openMainSection(secKey) {
   document.getElementById('sec-main-home').classList.add('hidden');
   document.getElementById('sub-page-header').classList.remove('hidden');
