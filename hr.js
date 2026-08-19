@@ -100,6 +100,7 @@ function getEmpCode(empOrNameOrId) {
   return name.length >= 2 ? name.substring(0, 2) : name;
 }
 
+// 依據入職週年制計算特休
 function calculateLaborSpecialLeave(name) {
   const info = EMPLOYEE_ONBOARDING_DATA[name] || EMPLOYEE_ONBOARDING_DATA['陳慧倪'];
   const onboard = new Date(info.onboard);
@@ -186,6 +187,55 @@ function initHrDefaults() {
   if (adminMonthElem && !adminMonthElem.value) adminMonthElem.value = thisMonthStr;
 }
 
+// 核心計算模組：計算單一員工在指定月份的各項指標
+function computeEmployeeMonthlyStats(empName, empId, monthStr, monthSchedules, monthRequests, totalWorkingDays, monthHolidayHours) {
+  const requiredWorkingHours = totalWorkingDays * 8.0;
+  const { legalDays, baseSpecialDays, baseHours, seniorityText } = calculateLaborSpecialLeave(empName);
+
+  const empSchedules = monthSchedules.filter(s => s.employee_id === empId || s.employee_name === empName);
+  const empRequests = monthRequests.filter(r => r.employee_id === empId || r.employee_name === empName);
+
+  let currentMonthWorkedHours = 0;
+  let satWorkCount = 0;
+  let usedSpecialDays = 0;
+
+  // 1. 計算班表時數與週六次數
+  empSchedules.forEach(s => {
+    if (s.shift_name?.includes('特休')) {
+      usedSpecialDays += 1;
+    } else if (s.shift_name && s.shift_name !== '未排班' && s.shift_name !== '休假') {
+      currentMonthWorkedHours += (Number(s.hours) || 8.5);
+      const dObj = new Date(s.date);
+      if (dObj.getDay() === 6) satWorkCount++;
+    }
+  });
+
+  // 2. 特休預約折算
+  empRequests.forEach(r => {
+    if (r.request_type === 'off' && !empSchedules.some(s => s.date === r.request_date && s.shift_name?.includes('特休'))) {
+      usedSpecialDays += 1;
+    }
+  });
+
+  const remainingSpecialDays = Math.max(0, baseSpecialDays - usedSpecialDays);
+  const specialLeaveHours = usedSpecialDays * 8.0;
+
+  // 公式：特休時數 + 當月國定假日時數 + 當月初累積休時數 + 當月工作時數 - 當月應工作時數
+  const nextMonthAccumulatedHours = specialLeaveHours + monthHolidayHours + baseHours + currentMonthWorkedHours - requiredWorkingHours;
+
+  return {
+    legalDays,
+    remainingSpecialDays,
+    usedSpecialDays,
+    currentMonthWorkedHours,
+    satWorkCount,
+    requiredWorkingHours,
+    nextMonthAccumulatedHours,
+    seniorityText
+  };
+}
+
+// 1. 個人出勤月曆與結算載入
 async function loadMySchedule() {
   const client = getHrSupabase();
   if (!client) return;
@@ -207,51 +257,36 @@ async function loadMySchedule() {
   for (let d = 1; d <= totalDays; d++) {
     const curDateStr = `${monthStr}-${String(d).padStart(2, '0')}`;
     const dayOfWeek = new Date(y, m - 1, d).getDay();
-    if (dayOfWeek !== 0) {
-      totalWorkingDays++;
-    }
-    if (getHolidayInfo(curDateStr)) {
-      monthHolidayHours += 8.0;
-    }
+    if (dayOfWeek !== 0) totalWorkingDays++;
+    if (getHolidayInfo(curDateStr)) monthHolidayHours += 8.0;
   }
 
-  const requiredWorkingHours = totalWorkingDays * 8.0;
-
-  const [schRes, myEmpRes] = await Promise.all([
+  const [schRes, reqRes] = await Promise.all([
     client.from('clinic_schedules').select('*').eq('employee_id', currentUser.empId || '00000000-0000-0000-0000-000000000000').gte('date', startDateStr).lte('date', endDateStr),
-    client.from('clinic_employees').select('*').eq('id', currentUser.empId || '00000000-0000-0000-0000-000000000000').maybeSingle()
+    client.from('clinic_schedule_requests').select('*').eq('line_user_id', currentUser.lineUserId || 'UNKNOWN').gte('request_date', startDateStr).lte('request_date', endDateStr)
   ]);
 
   const monthSchedules = schRes.data || [];
-  const empData = myEmpRes.data || {};
+  const monthRequests = reqRes.data || [];
 
-  const { legalDays, seniorityText } = calculateLaborSpecialLeave(currentUser.displayName);
-  const initialBaseHours = Number(empData.base_accumulated_hours) || (EMPLOYEE_ONBOARDING_DATA[currentUser.displayName]?.baseHours || 0);
-  const initialBaseSpecialDays = Number(empData.base_special_leave_days) || (EMPLOYEE_ONBOARDING_DATA[currentUser.displayName]?.baseSpecialDays || 0);
+  const stats = computeEmployeeMonthlyStats(
+    currentUser.displayName,
+    currentUser.empId,
+    monthStr,
+    monthSchedules,
+    monthRequests,
+    totalWorkingDays,
+    monthHolidayHours
+  );
 
-  let currentMonthWorkedHours = 0;
-  let currentMonthUsedSpecialDays = 0;
-
-  monthSchedules.forEach(s => {
-    if (s.shift_name?.includes('特休')) {
-      currentMonthUsedSpecialDays += 1;
-    } else if (s.shift_name && s.shift_name !== '未排班' && s.shift_name !== '休假') {
-      currentMonthWorkedHours += (Number(s.hours) || 8.5);
-    }
-  });
-
-  const remainingSpecialDays = Math.max(0, initialBaseSpecialDays - currentMonthUsedSpecialDays);
-  const specialLeaveHours = currentMonthUsedSpecialDays * 8.0;
-  const nextMonthAccumulatedHours = specialLeaveHours + monthHolidayHours + initialBaseHours + currentMonthWorkedHours - requiredWorkingHours;
-
-  if (document.getElementById('my-seniority-text')) document.getElementById('my-seniority-text').innerText = seniorityText;
-  if (document.getElementById('stat-special-leave')) document.getElementById('stat-special-leave').innerText = `${legalDays} 日`;
-  if (document.getElementById('stat-remaining-special')) document.getElementById('stat-remaining-special').innerText = `${remainingSpecialDays} 日`;
-  if (document.getElementById('stat-required-hours')) document.getElementById('stat-required-hours').innerText = `-${requiredWorkingHours} h`;
-  if (document.getElementById('my-total-hours')) document.getElementById('my-total-hours').innerText = `${currentMonthWorkedHours.toFixed(1)} h`;
+  if (document.getElementById('my-seniority-text')) document.getElementById('my-seniority-text').innerText = stats.seniorityText;
+  if (document.getElementById('stat-special-leave')) document.getElementById('stat-special-leave').innerText = `${stats.legalDays} 日`;
+  if (document.getElementById('stat-remaining-special')) document.getElementById('stat-remaining-special').innerText = `${stats.remainingSpecialDays} 日`;
+  if (document.getElementById('stat-required-hours')) document.getElementById('stat-required-hours').innerText = `-${stats.requiredWorkingHours} h`;
+  if (document.getElementById('my-total-hours')) document.getElementById('my-total-hours').innerText = `${stats.currentMonthWorkedHours.toFixed(1)} h`;
   if (document.getElementById('my-remaining-total-days')) {
-    const sign = nextMonthAccumulatedHours >= 0 ? '+' : '';
-    document.getElementById('my-remaining-total-days').innerText = `${sign}${nextMonthAccumulatedHours.toFixed(1)} h (${(nextMonthAccumulatedHours / 8.0).toFixed(1)}日)`;
+    const sign = stats.nextMonthAccumulatedHours >= 0 ? '+' : '';
+    document.getElementById('my-remaining-total-days').innerText = `${sign}${stats.nextMonthAccumulatedHours.toFixed(1)} h (${(stats.nextMonthAccumulatedHours / 8.0).toFixed(1)}日)`;
   }
 
   const grid = document.getElementById('my-calendar-grid');
@@ -312,6 +347,7 @@ async function loadMySchedule() {
  * 愛欣診所 LINE 管理系統 - 人事排班與出勤月報模組 (hr.js) - 第二段
  */
 
+// 2. 全員預約看板 (排休、出國、夜班)
 async function initRequestPage() {
   initHrDefaults();
 
@@ -537,6 +573,7 @@ async function deleteCurrentDayRequest() {
   }
 }
 
+// 3. 護理長排班中心、自訂規則與 AI 智慧排班
 async function initScheduleAdmin() {
   const client = getHrSupabase();
   if (!client) return;
@@ -655,6 +692,7 @@ async function runAiAutoScheduling() {
     const dayOffNames = new Set(dayReqs.filter(r => r.request_type === 'off' || r.request_type === 'abroad').map(r => r.employee_name));
     const dayNightOnlyNames = new Set(dayReqs.filter(r => r.request_type === 'night_only').map(r => r.employee_name));
 
+    // 規則 9：盧明伶休假由謝宜婷負責門診藥事代班
     let xieAssignedToPharma = false;
     if (luOffDates.has(dayStr)) {
       xieAssignedToPharma = true;
@@ -670,6 +708,7 @@ async function runAiAutoScheduling() {
       }
     }
 
+    // 5 樓開白 1 位
     const avail5F = group5F.filter(name => !dayOffNames.has(name));
     let opener5F = avail5F[0] || groupFloat.find(name => !dayOffNames.has(name) && (!xieAssignedToPharma || name !== '謝宜婷'));
     if (opener5F) {
@@ -685,6 +724,7 @@ async function runAiAutoScheduling() {
       }
     }
 
+    // 6 樓開白 1 位
     const avail6F = group6F.filter(name => !dayOffNames.has(name));
     let opener6F = avail6F[0] || groupFloat.find(name => !dayOffNames.has(name) && name !== opener5F && (!xieAssignedToPharma || name !== '謝宜婷'));
     if (opener6F) {
@@ -700,6 +740,7 @@ async function runAiAutoScheduling() {
       }
     }
 
+    // 晚班指派
     if (dayOfWeek === 1 || dayOfWeek === 3 || dayOfWeek === 5) {
       const nightCandidates = [...dayNightOnlyNames];
       if (nightCandidates.length > 0) {
@@ -718,6 +759,7 @@ async function runAiAutoScheduling() {
       }
     }
 
+    // 週六統計
     if (dayOfWeek === 6) {
       generatedSchedules.filter(s => s.date === dayStr).forEach(s => {
         const emp = cachedEmployees.find(e => e.id === s.employee_id);
@@ -761,6 +803,7 @@ async function loadScheduleCalendar() {
   cachedMonthRequests = reqRes.data || [];
   cachedMonthAttendance = attRes.data || [];
 
+  // 渲染底部連動表格
   renderNurseHoursSummary();
 
   const grid = document.getElementById('calendar-grid');
@@ -823,32 +866,113 @@ async function loadScheduleCalendar() {
   }
 }
 
+// 核心功能：護理長排班中心表格完整連動全體人員剩餘特休與累積休時數
 function renderNurseHoursSummary() {
   const summaryBox = document.getElementById('nurse-hours-summary');
-  if (!summaryBox) return;
+  const monthStr = document.getElementById('admin-sch-month')?.value;
+  if (!summaryBox || !monthStr) return;
   summaryBox.innerHTML = '';
 
+  const [y, m] = monthStr.split('-').map(Number);
+  const totalDays = new Date(y, m, 0).getDate();
+
+  let totalWorkingDays = 0;
+  let monthHolidayHours = 0;
+  for (let d = 1; d <= totalDays; d++) {
+    const curDateStr = `${monthStr}-${String(d).padStart(2, '0')}`;
+    const dayOfWeek = new Date(y, m - 1, d).getDay();
+    if (dayOfWeek !== 0) totalWorkingDays++;
+    if (getHolidayInfo(curDateStr)) monthHolidayHours += 8.0;
+  }
+
+  // 1. 護理同仁卡片（01~14 排序）
   const dialysisNurses = cachedEmployees.filter(e => isDialysisNurse(e.name, e.role));
-  
+  dialysisNurses.sort((a, b) => {
+    const codeA = parseInt(getEmpCode(a), 10) || 99;
+    const codeB = parseInt(getEmpCode(b), 10) || 99;
+    return codeA - codeB;
+  });
+
   dialysisNurses.forEach(emp => {
-    let empHours = 0;
-    let satWorkCount = 0;
-    cachedMonthSchedules.filter(s => s.employee_id === emp.id).forEach(s => {
-      if (s.hours && s.shift_name !== '未排班' && s.shift_name !== '休假') {
-        empHours += Number(s.hours) || 0;
-        const dObj = new Date(s.date);
-        if (dObj.getDay() === 6) satWorkCount++;
-      }
-    });
+    const stats = computeEmployeeMonthlyStats(
+      emp.name,
+      emp.id,
+      monthStr,
+      cachedMonthSchedules,
+      cachedMonthRequests,
+      totalWorkingDays,
+      monthHolidayHours
+    );
 
     const code = getEmpCode(emp);
-    const div = document.createElement('div');
-    div.className = "flex justify-between items-center p-1.5 rounded-lg border border-slate-200 bg-slate-50 text-[11px]";
-    div.innerHTML = `
-      <span class="font-bold text-slate-700">[${code}] ${emp.name} (週六${satWorkCount}次)</span>
-      <span class="font-black text-indigo-700 bg-indigo-100 px-1.5 py-0.2 rounded">${empHours.toFixed(1)}h</span>
+    const sign = stats.nextMonthAccumulatedHours >= 0 ? '+' : '';
+    const accDays = (stats.nextMonthAccumulatedHours / 8.0).toFixed(1);
+
+    const card = document.createElement('div');
+    card.className = "bg-white p-2 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between text-[11px] space-y-1";
+    card.innerHTML = `
+      <div class="flex justify-between items-center border-b border-slate-100 pb-1">
+        <span class="font-bold text-slate-800">[${code}] ${emp.name}</span>
+        <span class="bg-indigo-50 text-indigo-700 font-bold px-1.5 py-0.2 rounded text-[10px]">週六 ${stats.satWorkCount} 次</span>
+      </div>
+      <div class="space-y-0.5 text-[10px] text-slate-600">
+        <div class="flex justify-between">
+          <span>本月排定工時:</span>
+          <strong class="text-indigo-900">${stats.currentMonthWorkedHours.toFixed(1)}h</strong>
+        </div>
+        <div class="flex justify-between">
+          <span>剩餘特休:</span>
+          <strong class="text-emerald-700">${stats.remainingSpecialDays} 日</strong>
+        </div>
+        <div class="flex justify-between">
+          <span>下月累積休:</span>
+          <strong class="${stats.nextMonthAccumulatedHours >= 0 ? 'text-purple-700' : 'text-rose-600'}">${sign}${stats.nextMonthAccumulatedHours.toFixed(1)}h (${accDays}日)</strong>
+        </div>
+      </div>
     `;
-    summaryBox.appendChild(div);
+    summaryBox.appendChild(card);
+  });
+
+  // 2. 常日班同仁卡片（盧明伶、涂春娥、胡月霞）
+  const fixedStaffs = cachedEmployees.filter(e => isFixedStaff(e.name));
+  fixedStaffs.forEach(emp => {
+    const stats = computeEmployeeMonthlyStats(
+      emp.name,
+      emp.id,
+      monthStr,
+      cachedMonthSchedules,
+      cachedMonthRequests,
+      totalWorkingDays,
+      monthHolidayHours
+    );
+
+    const info = FIXED_STAFF_ROLES[emp.name];
+    const sign = stats.nextMonthAccumulatedHours >= 0 ? '+' : '';
+    const accDays = (stats.nextMonthAccumulatedHours / 8.0).toFixed(1);
+
+    const card = document.createElement('div');
+    card.className = "bg-emerald-50/60 p-2 rounded-xl border border-emerald-200 shadow-xs flex flex-col justify-between text-[11px] space-y-1";
+    card.innerHTML = `
+      <div class="flex justify-between items-center border-b border-emerald-200/60 pb-1">
+        <span class="font-bold text-emerald-950">[${info.roleName}] ${emp.name}</span>
+        <span class="bg-emerald-200 text-emerald-900 font-bold px-1.5 py-0.2 rounded text-[10px]">常日出勤</span>
+      </div>
+      <div class="space-y-0.5 text-[10px] text-slate-600">
+        <div class="flex justify-between">
+          <span>本月排班/代班:</span>
+          <strong class="text-emerald-900">${stats.currentMonthWorkedHours.toFixed(1)}h</strong>
+        </div>
+        <div class="flex justify-between">
+          <span>剩餘特休:</span>
+          <strong class="text-emerald-700">${stats.remainingSpecialDays} 日</strong>
+        </div>
+        <div class="flex justify-between">
+          <span>下月累積休:</span>
+          <strong class="${stats.nextMonthAccumulatedHours >= 0 ? 'text-purple-700' : 'text-rose-600'}">${sign}${stats.nextMonthAccumulatedHours.toFixed(1)}h (${accDays}日)</strong>
+        </div>
+      </div>
+    `;
+    summaryBox.appendChild(card);
   });
 }
 
