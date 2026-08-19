@@ -545,7 +545,6 @@ async function initScheduleAdmin() {
 
   const { data: empData } = await client.from('clinic_employees').select('*').eq('is_active', true);
   
-  // 嚴格人名去重
   const seen = new Set();
   cachedEmployees = (empData || []).filter(e => {
     if (!e.name || seen.has(e.name.trim())) return false;
@@ -671,7 +670,11 @@ async function loadScheduleCalendar() {
     
     if (dayAttendance.length > 0) {
       if (latePunches.length > 0) {
-        const lateNames = latePunches.map(p => getEmpCode(p.employee_name)).join(',');
+        const lateNames = latePunches.map(p => {
+          const matched = cachedEmployees.find(e => e.line_user_id === p.line_user_id || e.id === p.employee_id);
+          const name = p.employee_name || (matched ? matched.name : '同仁');
+          return getEmpCode(name);
+        }).join(',');
         bodyHtml += `<div class="text-[9px] bg-rose-100 text-rose-800 font-bold px-1 py-0.2 rounded leading-tight">⚠️遲到(${latePunches.length}): ${lateNames}</div>`;
       } else {
         bodyHtml += `<div class="text-[9px] bg-emerald-50 text-emerald-800 font-semibold px-1 py-0.2 rounded leading-tight">✅全準時 (${normalPunches.length})</div>`;
@@ -719,10 +722,13 @@ function openShiftEditModal(dateStr, dayOfWeek, holiday, holidayWinner, dayReque
   const regularOffs = (dayRequests || []).filter(r => r.request_type === 'off').map(r => r.employee_name || '');
   if (regularOffs.length > 0) priorityHints.push(`🏖️ 登記排休：${regularOffs.join('、')}`);
 
+  // 修復歷史打卡紀錄中姓名為 null 的情況
   if (dayAttendance && dayAttendance.length > 0) {
     const attDetails = dayAttendance.map(a => {
       const t = new Date(a.punch_time).toTimeString().substring(0, 5);
-      return `${a.employee_name}(${a.punch_type === 'in' ? '上班' : '下班'} ${t}${a.is_late ? ` 遲${a.late_minutes}分` : ''})`;
+      const matched = cachedEmployees.find(e => e.line_user_id === a.line_user_id || e.id === a.employee_id);
+      const safeName = a.employee_name || (matched ? matched.name : '同仁');
+      return `${safeName}(${a.punch_type === 'in' ? '上班' : '下班'} ${t}${a.is_late ? ` 遲${a.late_minutes}分` : ''})`;
     }).join(' | ');
     priorityHints.push(`⏱️ 實際打卡：${attDetails}`);
   }
