@@ -1,6 +1,6 @@
 /**
  * 愛欣診所 LINE 管理系統 - 主控制模組 (main.js)
- * 包含：LIFF 初始化、身分同步、100m GPS 打卡、班表連動遲到判定、每日限制單次打卡
+ * 包含：LIFF 初始化、精確身分同步、GPS 100m 打卡、班表連動遲到判定、每日限制單次打卡
  */
 
 // ==================== 全域狀態宣告 ====================
@@ -182,7 +182,7 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// ==================== 出勤查詢與限制 ====================
+// ==================== 出勤查詢與單日限制 ====================
 async function checkTodayAttendance() {
   const summaryElem = document.getElementById('today-punch-summary');
   const client = getSupabaseClient();
