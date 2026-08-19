@@ -1,6 +1,6 @@
 /**
  * 愛欣診所 LINE 管理系統 - 主控制模組 (main.js)
- * 包含：LIFF 初始化、身份識別、100m GPS 定位打卡、班表連動遲到判定、每日限制單次打卡
+ * 包含：LIFF 初始化、身分同步、100m GPS 打卡、班表連動遲到判定、每日限制單次打卡
  */
 
 // ==================== 全域狀態宣告 ====================
@@ -97,7 +97,7 @@ async function syncEmployeeRecord() {
       currentUser.role = data.role;
 
       let displayTitle = '護理師';
-      if (data.role === 'doctor' || data.name === '林和正') displayTitle = '醫師';
+      if (data.name === '林和正' || data.role === 'doctor') displayTitle = '醫師';
       else if (data.name === '陳慧倪' || data.name === '陳惠倪') displayTitle = '護理長';
       else if (data.name === '曾憲敏') displayTitle = '副護理長';
       else if (data.name === '陳金暖') displayTitle = '小組長';
@@ -113,7 +113,7 @@ async function syncEmployeeRecord() {
       currentUser.empId = null;
       currentUser.role = 'guest';
       if (userNameElem) userNameElem.innerText = `${currentUser.displayName || '使用者'} (未綁定)`;
-      alert(`⚠️ 您的 LINE 尚未綁定！\n代碼：${currentUser.lineUserId}\n請將此代碼設定於 clinic_employees。`);
+      alert(`⚠️ 您的 LINE 尚未綁定！\n代碼：${currentUser.lineUserId}\n請將此代碼設定於 clinic_employees 表。`);
     }
   } catch (err) {
     console.error('身分同步失敗:', err);
@@ -125,7 +125,7 @@ function getClinicLocation() {
   return window.CLINIC_LOCATION || {
     lat: 22.6309209,
     lng: 120.3392031,
-    radiusMeters: 100 // 嚴格 100 公尺限制
+    radiusMeters: 100
   };
 }
 
@@ -247,7 +247,7 @@ async function checkTodayAttendance() {
   }
 }
 
-// ==================== 執行打卡（班表連動與限制一次） ====================
+// ==================== 執行打卡（班表連動與限制單次） ====================
 async function punchAttendance(type) {
   const client = getSupabaseClient();
   if (!client) {
@@ -260,7 +260,6 @@ async function punchAttendance(type) {
     return;
   }
 
-  // 1. GPS 100m 嚴格檢查
   const clinicLoc = getClinicLocation();
   const radius = clinicLoc.radiusMeters || 100;
 
@@ -283,7 +282,6 @@ async function punchAttendance(type) {
 
   const todayStr = new Date().toISOString().split('T')[0];
 
-  // 2. 檢查今天是否已打過此類型卡（單日限制一次）
   const { data: existRecords } = await client
     .from('clinic_attendance')
     .select('id, punch_time')
@@ -298,7 +296,6 @@ async function punchAttendance(type) {
     return;
   }
 
-  // 3. 查詢今日班表以連動判斷上班遲到時間門檻
   let scheduledShiftName = '常規班';
   let limitHour = 8;
   let limitMinute = 0;
@@ -311,7 +308,6 @@ async function punchAttendance(type) {
     limitMinute = 0;
     scheduledShiftName = '常日班 (08:00前)';
   } else {
-    // 查詢透析護理師排班表
     const { data: schData } = await client
       .from('clinic_schedules')
       .select('shift_name, hours')
@@ -328,12 +324,10 @@ async function punchAttendance(type) {
         limitHour = 15;
         limitMinute = 0;
       } else {
-        // 一般白班
         limitHour = 7;
         limitMinute = 0;
       }
     } else {
-      // 若無特別排班設定，預設門檻為 08:00
       limitHour = 8;
       limitMinute = 0;
       scheduledShiftName = '常規/未排班 (08:00前)';
@@ -387,7 +381,7 @@ async function punchAttendance(type) {
     await checkTodayAttendance();
   } catch (err) {
     console.error('打卡寫入失敗:', err);
-    if (err.message.includes('idx_unique_daily_punch')) {
+    if (err.message && err.message.includes('idx_unique_daily_punch')) {
       alert(`⚠️ 您今日已完成過【${typeName}】打卡，無法重複打卡！`);
     } else {
       alert('打卡失敗：' + err.message);
