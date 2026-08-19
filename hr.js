@@ -2,7 +2,6 @@
  * 愛欣診所 LINE 管理系統 - 人事排班與出勤月報模組 (hr.js) - 第一段
  */
 
-// ==================== 全域狀態與常數 ====================
 let cachedEmployees = [];
 let cachedMonthSchedules = [];
 let cachedMonthRequests = [];
@@ -11,11 +10,9 @@ let cachedMonthAttendance = [];
 let editingDate = null;
 let userReqDate = null;
 
-// 3 大核心班別
 const SHIFT_TYPES = ['未排班', '開門白班', '正常白班', '正常晚班'];
 const WORK_HOURS = [7, 7.5, 8.5, 9, 9.5];
 
-// 護理師與全員代碼對照表
 const NURSE_CODE_MAP = {
   '陳慧倪': '01', '陳惠倪': '01',
   '曾憲敏': '02',
@@ -59,7 +56,6 @@ const EMPLOYEE_ONBOARDING_DATA = {
   '林和正': { onboard: '2000-01-01', roleName: '醫師' }
 };
 
-// 固定常日班同仁定義
 const FIXED_STAFF_ROLES = {
   '盧明伶': { roleName: '門診藥事', tag: 'bg-emerald-100 text-emerald-900 border-emerald-300' },
   '涂春娥': { roleName: '工作人員', tag: 'bg-teal-100 text-teal-900 border-teal-300' },
@@ -130,7 +126,6 @@ function calculateLaborSpecialLeave(name) {
   return { days, seniorityText, roleName: info.roleName };
 }
 
-// 嚴格身分互斥判定
 function isFixedStaff(name) { 
   return !!FIXED_STAFF_ROLES[name]; 
 }
@@ -189,7 +184,6 @@ function initHrDefaults() {
   if (adminMonthElem && !adminMonthElem.value) adminMonthElem.value = thisMonthStr;
 }
 
-// ==================== 1. 個人出勤與假期統計 ====================
 async function loadMySchedule() {
   const client = getHrSupabase();
   if (!client) return;
@@ -312,7 +306,6 @@ async function loadMySchedule() {
  * 愛欣診所 LINE 管理系統 - 人事排班與出勤月報模組 (hr.js) - 第二段
  */
 
-// ==================== 2. 全員預約看板 ====================
 async function initRequestPage() {
   initHrDefaults();
 
@@ -538,7 +531,6 @@ async function deleteCurrentDayRequest() {
   }
 }
 
-// ==================== 3. 護理長排班中心與名冊速查 ====================
 async function initScheduleAdmin() {
   const client = getHrSupabase();
   if (!client) return;
@@ -556,7 +548,6 @@ async function initScheduleAdmin() {
   if (codeTagsContainer) {
     codeTagsContainer.innerHTML = '';
 
-    // 1. 醫師（僅林和正）
     const docs = cachedEmployees.filter(e => isDoctor(e.name, e.role));
     docs.forEach(e => {
       const span = document.createElement('span');
@@ -565,7 +556,6 @@ async function initScheduleAdmin() {
       codeTagsContainer.appendChild(span);
     });
 
-    // 2. 透析輪班護理人員（固定 01~14 代碼）
     const dialysisNurses = cachedEmployees.filter(e => isDialysisNurse(e.name, e.role));
     dialysisNurses.forEach(e => {
       const code = getEmpCode(e);
@@ -576,7 +566,6 @@ async function initScheduleAdmin() {
       codeTagsContainer.appendChild(span);
     });
 
-    // 3. 常日班同仁（盧明伶-門診藥事、涂春娥-工作人員、胡月霞-清潔人員）
     const fixedStaffs = cachedEmployees.filter(e => isFixedStaff(e.name));
     fixedStaffs.forEach(e => {
       const info = FIXED_STAFF_ROLES[e.name];
@@ -722,7 +711,6 @@ function openShiftEditModal(dateStr, dayOfWeek, holiday, holidayWinner, dayReque
   const regularOffs = (dayRequests || []).filter(r => r.request_type === 'off').map(r => r.employee_name || '');
   if (regularOffs.length > 0) priorityHints.push(`🏖️ 登記排休：${regularOffs.join('、')}`);
 
-  // 修復歷史打卡紀錄中姓名為 null 的情況
   if (dayAttendance && dayAttendance.length > 0) {
     const attDetails = dayAttendance.map(a => {
       const t = new Date(a.punch_time).toTimeString().substring(0, 5);
@@ -853,7 +841,6 @@ async function runNationalHolidayLottery() {
   loadScheduleCalendar();
 }
 
-// ==================== 4. A4 橫向出勤班表與月曆列印 ====================
 function buildA4CalendarHtml(monthStr) {
   const [y, m] = monthStr.split('-').map(Number);
   const firstDayObj = new Date(y, m - 1, 1);
