@@ -32,7 +32,7 @@ const NURSE_CODE_MAP = {
   '吳沐芸': '13',
   '王芝妍': '14',
   '盧明伶': '藥事',
-  '涂春娥': '行政',
+  '涂春娥': '工作人員',
   '胡月霞': '清潔',
   '林和正': '醫師'
 };
@@ -53,15 +53,16 @@ const EMPLOYEE_ONBOARDING_DATA = {
   '吳培瑜': { onboard: '2021-09-20', roleName: '護理師' },
   '李香瑩': { onboard: '2023-07-10', roleName: '護理師' },
   '吳沐芸': { onboard: '2024-05-15', roleName: '護理師' },
-  '涂春娥': { onboard: '2008-10-20', roleName: '行政人員' },
+  '涂春娥': { onboard: '2008-10-20', roleName: '工作人員' },
   '胡月霞': { onboard: '2022-04-01', roleName: '清潔人員' },
   '王芝妍': { onboard: '2018-08-06', roleName: '工時透析' },
   '林和正': { onboard: '2000-01-01', roleName: '醫師' }
 };
 
+// 固定常日班同仁定義
 const FIXED_STAFF_ROLES = {
-  '盧明伶': { roleName: '門診藥事(常日班)', tag: 'bg-emerald-100 text-emerald-900 border-emerald-300' },
-  '涂春娥': { roleName: '行政人員', tag: 'bg-teal-100 text-teal-900 border-teal-300' },
+  '盧明伶': { roleName: '門診藥事', tag: 'bg-emerald-100 text-emerald-900 border-emerald-300' },
+  '涂春娥': { roleName: '工作人員', tag: 'bg-teal-100 text-teal-900 border-teal-300' },
   '胡月霞': { roleName: '清潔人員', tag: 'bg-cyan-100 text-cyan-900 border-cyan-300' }
 };
 
@@ -129,17 +130,26 @@ function calculateLaborSpecialLeave(name) {
   return { days, seniorityText, roleName: info.roleName };
 }
 
-function isFixedStaff(name) { return !!FIXED_STAFF_ROLES[name]; }
-function isDoctor(name, role) { return name === '林和正' || role === 'doctor' || role === 'admin'; }
-function isDialysisNurse(name, role) { return !isFixedStaff(name) && !isDoctor(name, role); }
+// 嚴格身分互斥判定
+function isFixedStaff(name) { 
+  return !!FIXED_STAFF_ROLES[name]; 
+}
+
+function isDoctor(name, role) { 
+  return name === '林和正' || role === 'doctor'; 
+}
+
+function isDialysisNurse(name, role) { 
+  return !isFixedStaff(name) && !isDoctor(name, role); 
+}
 
 function isSuperAdmin() {
   return (
-    currentUser.role === 'admin' ||
-    currentUser.role === 'doctor' ||
+    currentUser.name === '林和正' ||
     currentUser.displayName === '林和正' ||
     currentUser.displayName === '陳慧倪' ||
-    currentUser.displayName === '陳惠倪'
+    currentUser.displayName === '陳惠倪' ||
+    currentUser.role === 'doctor'
   );
 }
 
@@ -528,13 +538,14 @@ async function deleteCurrentDayRequest() {
   }
 }
 
-// ==================== 3. 護理長排班與上月打卡月報統計 ====================
+// ==================== 3. 護理長排班中心與名冊速查 ====================
 async function initScheduleAdmin() {
   const client = getHrSupabase();
   if (!client) return;
 
   const { data: empData } = await client.from('clinic_employees').select('*').eq('is_active', true);
   
+  // 嚴格人名去重
   const seen = new Set();
   cachedEmployees = (empData || []).filter(e => {
     if (!e.name || seen.has(e.name.trim())) return false;
@@ -546,6 +557,7 @@ async function initScheduleAdmin() {
   if (codeTagsContainer) {
     codeTagsContainer.innerHTML = '';
 
+    // 1. 醫師（僅林和正）
     const docs = cachedEmployees.filter(e => isDoctor(e.name, e.role));
     docs.forEach(e => {
       const span = document.createElement('span');
@@ -554,6 +566,7 @@ async function initScheduleAdmin() {
       codeTagsContainer.appendChild(span);
     });
 
+    // 2. 透析輪班護理人員（固定 01~14 代碼）
     const dialysisNurses = cachedEmployees.filter(e => isDialysisNurse(e.name, e.role));
     dialysisNurses.forEach(e => {
       const code = getEmpCode(e);
@@ -564,6 +577,7 @@ async function initScheduleAdmin() {
       codeTagsContainer.appendChild(span);
     });
 
+    // 3. 常日班同仁（盧明伶-門診藥事、涂春娥-工作人員、胡月霞-清潔人員）
     const fixedStaffs = cachedEmployees.filter(e => isFixedStaff(e.name));
     fixedStaffs.forEach(e => {
       const info = FIXED_STAFF_ROLES[e.name];
@@ -590,7 +604,6 @@ async function loadScheduleCalendar() {
   const startDateStr = `${monthStr}-01`;
   const endDateStr = `${monthStr}-${totalDays}`;
 
-  // 同步抓取：排班表、預約登記、國定抽籤、實際打卡出勤紀錄
   const [schRes, reqRes, lotteryRes, attRes] = await Promise.all([
     client.from('clinic_schedules').select('*, clinic_employees(*)').gte('date', startDateStr).lte('date', endDateStr),
     client.from('clinic_schedule_requests').select('*, clinic_employees(*)').gte('request_date', startDateStr).lte('request_date', endDateStr),
@@ -638,13 +651,11 @@ async function loadScheduleCalendar() {
 
     let bodyHtml = `<div class="space-y-0.5 mt-0.5">`;
 
-    // 1. 顯示國休/預約
     if (holidayWinner) {
       const winnerName = holidayWinner.clinic_employees?.name || '';
       bodyHtml += `<div class="text-[9px] bg-purple-100 text-purple-900 font-bold px-1 rounded truncate">🥇國休:${winnerName}</div>`;
     }
 
-    // 2. 顯示排班規劃
     const workSchedules = daySchedules.filter(s => s.shift_name && s.shift_name !== '未排班' && s.shift_name !== '休假');
     if (workSchedules.length > 0) {
       const summaryList = workSchedules.map(s => {
@@ -655,12 +666,10 @@ async function loadScheduleCalendar() {
       bodyHtml += `<div class="text-[9px] bg-indigo-50 text-indigo-900 font-bold px-1 py-0.2 rounded leading-tight">班:${summaryList}</div>`;
     }
 
-    // 3. 顯示實際出勤與遲到統計（護理長月曆統計功能）
     const latePunches = dayAttendance.filter(a => a.punch_type === 'in' && a.is_late);
     const normalPunches = dayAttendance.filter(a => a.punch_type === 'in' && !a.is_late);
     
     if (dayAttendance.length > 0) {
-      let attText = `打卡:${normalPunches.length}人`;
       if (latePunches.length > 0) {
         const lateNames = latePunches.map(p => getEmpCode(p.employee_name)).join(',');
         bodyHtml += `<div class="text-[9px] bg-rose-100 text-rose-800 font-bold px-1 py-0.2 rounded leading-tight">⚠️遲到(${latePunches.length}): ${lateNames}</div>`;
@@ -710,7 +719,6 @@ function openShiftEditModal(dateStr, dayOfWeek, holiday, holidayWinner, dayReque
   const regularOffs = (dayRequests || []).filter(r => r.request_type === 'off').map(r => r.employee_name || '');
   if (regularOffs.length > 0) priorityHints.push(`🏖️ 登記排休：${regularOffs.join('、')}`);
 
-  // 列出實際打卡明細
   if (dayAttendance && dayAttendance.length > 0) {
     const attDetails = dayAttendance.map(a => {
       const t = new Date(a.punch_time).toTimeString().substring(0, 5);
