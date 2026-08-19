@@ -100,13 +100,11 @@ function getEmpCode(empOrNameOrId) {
   return name.length >= 2 ? name.substring(0, 2) : name;
 }
 
-// 依據入職週年制計算勞基法法定特休與週期
 function calculateLaborSpecialLeave(name) {
   const info = EMPLOYEE_ONBOARDING_DATA[name] || EMPLOYEE_ONBOARDING_DATA['陳慧倪'];
   const onboard = new Date(info.onboard);
   const now = new Date();
 
-  // 計算到職年資
   const totalMonths = (now.getFullYear() - onboard.getFullYear()) * 12 + (now.getMonth() - onboard.getMonth());
   const years = totalMonths / 12;
 
@@ -122,7 +120,6 @@ function calculateLaborSpecialLeave(name) {
     legalDays = Math.min(30, 15 + extraYears);
   }
 
-  // 個人週年結算週期（下一個到職日結算）
   let nextCycleDate = new Date(now.getFullYear(), onboard.getMonth(), onboard.getDate());
   if (now > nextCycleDate) {
     nextCycleDate = new Date(now.getFullYear() + 1, onboard.getMonth(), onboard.getDate());
@@ -189,7 +186,6 @@ function initHrDefaults() {
   if (adminMonthElem && !adminMonthElem.value) adminMonthElem.value = thisMonthStr;
 }
 
-// 1. 個人出勤、特休與累積休時數計算
 async function loadMySchedule() {
   const client = getHrSupabase();
   if (!client) return;
@@ -206,7 +202,6 @@ async function loadMySchedule() {
   const startDateStr = `${monthStr}-01`;
   const endDateStr = `${monthStr}-${totalDays}`;
 
-  // 計算當月工作日天數（扣除週日休診）
   let totalWorkingDays = 0;
   let monthHolidayHours = 0;
   for (let d = 1; d <= totalDays; d++) {
@@ -220,7 +215,6 @@ async function loadMySchedule() {
     }
   }
 
-  // 洗腎護理師當月應工作總負時數 = 月總工作日 * 8
   const requiredWorkingHours = totalWorkingDays * 8.0;
 
   const [schRes, myEmpRes] = await Promise.all([
@@ -235,7 +229,6 @@ async function loadMySchedule() {
   const initialBaseHours = Number(empData.base_accumulated_hours) || (EMPLOYEE_ONBOARDING_DATA[currentUser.displayName]?.baseHours || 0);
   const initialBaseSpecialDays = Number(empData.base_special_leave_days) || (EMPLOYEE_ONBOARDING_DATA[currentUser.displayName]?.baseSpecialDays || 0);
 
-  // 本月實際工作時數與已休特休天數
   let currentMonthWorkedHours = 0;
   let currentMonthUsedSpecialDays = 0;
 
@@ -249,9 +242,6 @@ async function loadMySchedule() {
 
   const remainingSpecialDays = Math.max(0, initialBaseSpecialDays - currentMonthUsedSpecialDays);
   const specialLeaveHours = currentMonthUsedSpecialDays * 8.0;
-
-  // 累積休時數公式：
-  // 特休時數 + 當月國定假日時數 + 當月初累積休時數 + 當月工作時數 - 當月應工作時數 = 下個月累積休時數
   const nextMonthAccumulatedHours = specialLeaveHours + monthHolidayHours + initialBaseHours + currentMonthWorkedHours - requiredWorkingHours;
 
   if (document.getElementById('my-seniority-text')) document.getElementById('my-seniority-text').innerText = seniorityText;
@@ -322,7 +312,6 @@ async function loadMySchedule() {
  * 愛欣診所 LINE 管理系統 - 人事排班與出勤月報模組 (hr.js) - 第二段
  */
 
-// 2. 全員預約看板 (排休、出國、只上夜班)
 async function initRequestPage() {
   initHrDefaults();
 
@@ -548,7 +537,6 @@ async function deleteCurrentDayRequest() {
   }
 }
 
-// 3. 護理長排班中心、自訂規則與 AI 智慧排班演算法
 async function initScheduleAdmin() {
   const client = getHrSupabase();
   if (!client) return;
@@ -620,7 +608,6 @@ async function saveSchedulingRules() {
   else alert('💾 排班邏輯規則已儲存！AI 自動排班將依此規則運算。');
 }
 
-// AI 智慧排班引擎（整合 15 號預約、5/6樓開門白班各一、週六公平性、盧明伶休假由謝宜婷代班）
 async function runAiAutoScheduling() {
   const client = getHrSupabase();
   const monthStr = document.getElementById('admin-sch-month')?.value;
@@ -633,7 +620,6 @@ async function runAiAutoScheduling() {
   const startDateStr = `${monthStr}-01`;
   const endDateStr = `${monthStr}-${totalDays}`;
 
-  // 1. 抓取當月預約與打卡遲到歷史
   const [reqRes, attRes] = await Promise.all([
     client.from('clinic_schedule_requests').select('*').gte('request_date', startDateStr).lte('request_date', endDateStr),
     client.from('clinic_attendance').select('*').gte('punch_date', `${monthStr}-01`).lte('punch_date', endDateStr)
@@ -642,7 +628,6 @@ async function runAiAutoScheduling() {
   const monthRequests = reqRes.data || [];
   const monthAttendance = attRes.data || [];
 
-  // 統計遲到次數以優先排週六班
   const lateCounts = {};
   monthAttendance.forEach(a => {
     if (a.punch_type === 'in' && a.is_late) {
@@ -650,7 +635,6 @@ async function runAiAutoScheduling() {
     }
   });
 
-  // 人員分組
   const group5F = ['陳金暖', '王瓊代', '吳金燕', '吳培瑜', '吳沐芸'];
   const group6F = ['曾憲敏', '薛雅仁', '王靜慧', '李香瑩', '王芝妍'];
   const groupFloat = ['林雯琦', '李牧音', '謝宜婷'];
@@ -659,20 +643,18 @@ async function runAiAutoScheduling() {
   const saturdayCounts = {};
   cachedEmployees.forEach(e => { saturdayCounts[e.name] = 0; });
 
-  // 找出盧明伶特休日
   const luOffDates = new Set(monthRequests.filter(r => (r.employee_name === '盧明伶' || r.line_user_id?.includes('盧明伶')) && r.request_type === 'off').map(r => r.request_date));
 
   for (let d = 1; d <= totalDays; d++) {
     const dayStr = `${monthStr}-${String(d).padStart(2, '0')}`;
     const dayOfWeek = new Date(y, m - 1, d).getDay();
 
-    if (dayOfWeek === 0) continue; // 週日休診
+    if (dayOfWeek === 0) continue;
 
     const dayReqs = monthRequests.filter(r => r.request_date === dayStr);
     const dayOffNames = new Set(dayReqs.filter(r => r.request_type === 'off' || r.request_type === 'abroad').map(r => r.employee_name));
     const dayNightOnlyNames = new Set(dayReqs.filter(r => r.request_type === 'night_only').map(r => r.employee_name));
 
-    // 規則 9：盧明伶休假由謝宜婷負責門診藥事代班
     let xieAssignedToPharma = false;
     if (luOffDates.has(dayStr)) {
       xieAssignedToPharma = true;
@@ -688,7 +670,6 @@ async function runAiAutoScheduling() {
       }
     }
 
-    // 5 樓指派（開門白班 1 位）
     const avail5F = group5F.filter(name => !dayOffNames.has(name));
     let opener5F = avail5F[0] || groupFloat.find(name => !dayOffNames.has(name) && (!xieAssignedToPharma || name !== '謝宜婷'));
     if (opener5F) {
@@ -704,7 +685,6 @@ async function runAiAutoScheduling() {
       }
     }
 
-    // 6 樓指派（開門白班 1 位）
     const avail6F = group6F.filter(name => !dayOffNames.has(name));
     let opener6F = avail6F[0] || groupFloat.find(name => !dayOffNames.has(name) && name !== opener5F && (!xieAssignedToPharma || name !== '謝宜婷'));
     if (opener6F) {
@@ -720,7 +700,6 @@ async function runAiAutoScheduling() {
       }
     }
 
-    // 指派晚班（夜班需求優先）
     if (dayOfWeek === 1 || dayOfWeek === 3 || dayOfWeek === 5) {
       const nightCandidates = [...dayNightOnlyNames];
       if (nightCandidates.length > 0) {
@@ -739,7 +718,6 @@ async function runAiAutoScheduling() {
       }
     }
 
-    // 統計週六出勤次數
     if (dayOfWeek === 6) {
       generatedSchedules.filter(s => s.date === dayStr).forEach(s => {
         const emp = cachedEmployees.find(e => e.id === s.employee_id);
@@ -748,7 +726,6 @@ async function runAiAutoScheduling() {
     }
   }
 
-  // 寫入資料庫
   const dialysisNurseIds = cachedEmployees.filter(e => isDialysisNurse(e.name, e.role)).map(e => e.id);
   await client.from('clinic_schedules').delete().gte('date', startDateStr).lte('date', endDateStr).in('employee_id', dialysisNurseIds);
 
@@ -875,7 +852,6 @@ function renderNurseHoursSummary() {
   });
 }
 
-// 排班彈窗（支援提早上班/延後下班 0.5h/1.0h 工時補正）
 function openShiftEditModal(dateStr, dayOfWeek, holiday, dayRequests, dayAttendance) {
   editingDate = dateStr;
   document.getElementById('modal-date-title').innerText = `📅 ${dateStr} ${holiday ? `(🎌${holiday.name})` : ''} 出勤工時審核與排班`;
@@ -983,7 +959,6 @@ async function saveModalDaySchedule() {
   loadScheduleCalendar();
 }
 
-// 4. A4 班表列印與匯出
 function buildA4CalendarHtml(monthStr) {
   const [y, m] = monthStr.split('-').map(Number);
   const firstDayObj = new Date(y, m - 1, 1);
