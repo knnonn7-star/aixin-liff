@@ -32,7 +32,6 @@
 
   <div class="bg-white w-full max-w-xl rounded-2xl shadow-xl p-4 md:p-6 space-y-4">
     
-    <!-- 頂部頁頭 -->
     <header class="flex justify-between items-center border-b border-slate-100 pb-2">
       <div class="flex items-center gap-2">
         <span class="text-xl">🏥</span>
@@ -46,10 +45,8 @@
       </div>
     </header>
 
-    <!-- 主頁面：打卡與系統入口 -->
     <main id="sec-main-home" class="space-y-4">
       
-      <!-- 打卡面板 -->
       <section class="bg-gradient-to-br from-emerald-700 via-teal-800 to-slate-800 text-white p-4 rounded-2xl shadow-md text-center space-y-2">
         <div class="flex justify-between items-center text-[11px] text-emerald-100 border-b border-emerald-600/40 pb-1.5 px-1">
           <div class="flex items-center gap-1">
@@ -80,7 +77,6 @@
         </div>
       </section>
 
-      <!-- 系統入口 -->
       <section class="space-y-2.5 pt-1">
         <p class="text-xs font-bold text-slate-400 text-center">系統專區入口：</p>
         
@@ -108,7 +104,6 @@
       </section>
     </main>
 
-    <!-- 子系統頂部返回列 -->
     <div id="sub-page-header" class="hidden pb-2 border-b border-slate-200 flex justify-between items-center no-print">
       <button onclick="backToMainMenu()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1">
         ⬅️ 返回主選單
@@ -116,7 +111,6 @@
       <span id="sub-page-title" class="text-xs font-bold text-slate-700"></span>
     </div>
 
-    <!-- 人事管理系統模組 -->
     <section id="sec-hr" class="hidden space-y-3">
       <div class="grid grid-cols-3 gap-1 bg-slate-200 p-1 rounded-xl text-xs font-bold text-slate-700 no-print">
         <button id="hr-tab-myschedule" onclick="switchHrTab('myschedule')" class="py-2 rounded-lg bg-indigo-600 text-white shadow-sm transition">📅 我的班表</button>
@@ -124,7 +118,6 @@
         <button id="hr-tab-scheduling" onclick="switchHrTab('scheduling')" class="py-2 rounded-lg hover:text-slate-900 transition">👩‍⚕️ 護理長排班</button>
       </div>
 
-      <!-- 子頁 1：我的班表與假期時數精準結算 (週年制) -->
       <div id="hr-sec-myschedule" class="space-y-3">
         <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-xs space-y-2">
           <div class="flex justify-between items-center border-b border-indigo-200/60 pb-1.5">
@@ -166,7 +159,6 @@
         </div>
       </div>
 
-      <!-- 子頁 2：全員預約看板 (排休/特休/出國/夜班) -->
       <div id="hr-sec-request" class="hidden space-y-3">
         <div class="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs">
           <div class="flex items-center gap-1.5">
@@ -183,7 +175,6 @@
         </div>
       </div>
 
-      <!-- 子頁 3：護理長排班中心 (自訂排班邏輯、AI智慧排班、全員特休工時連動) -->
       <div id="hr-sec-scheduling" class="hidden space-y-3">
         <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2.5 text-xs no-print">
           <div class="flex justify-between items-center">
@@ -196,7 +187,6 @@
 
           <div class="flex flex-wrap gap-1.5" id="nurse-code-tags"></div>
 
-          <!-- 自訂排班邏輯規則空位欄 -->
           <div class="space-y-1 pt-1 border-t border-slate-200">
             <div class="flex justify-between items-center">
               <label class="font-bold text-slate-700">📜 排班邏輯設定 (護理長可自訂)：</label>
@@ -222,14 +212,13 @@
           <div id="calendar-grid" class="grid grid-cols-7 gap-1"></div>
         </div>
 
-        <!-- 全員剩餘特休、下月累積休時數與工時連動看板 -->
         <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 text-xs no-print">
           <h4 class="font-bold text-slate-700">⏱️ 本月護理同仁工時累計與週六出勤次數 (即時連動特休與累積休)</h4>
           <div id="nurse-hours-summary" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
         </div>
       </div>
     </section>
-    <!-- 帳務管理系統模組 -->
+
     <section id="sec-finance" class="hidden space-y-4 no-print">
       <div class="grid grid-cols-3 gap-1 bg-slate-200 p-1 rounded-xl text-xs font-bold text-slate-700">
         <button id="fin-tab-register" onclick="switchFinTab('register')" class="py-2 rounded-lg bg-slate-900 text-white shadow-sm transition">📦 現場進貨</button>
@@ -237,7 +226,6 @@
         <button id="fin-tab-report" onclick="switchFinTab('report')" class="py-2 rounded-lg hover:text-slate-900 transition">📊 財務月報</button>
       </div>
 
-      <!-- 現場進貨登記表單 -->
       <div id="fin-sec-register" class="space-y-3.5">
         <form id="cash-form" class="space-y-3">
           <div>
@@ -305,7 +293,6 @@
         </form>
       </div>
 
-      <!-- 櫃檯補登清單 -->
       <div id="fin-sec-invoice" class="hidden space-y-3">
         <div class="flex justify-between items-center bg-amber-50 p-2.5 rounded-xl border border-amber-200 text-xs">
           <span class="text-amber-800 font-bold">待補發票與核對清單</span>
@@ -314,7 +301,6 @@
         <div id="pending-invoice-list" class="space-y-2"></div>
       </div>
 
-      <!-- 財務月報 -->
       <div id="fin-sec-report" class="hidden space-y-3">
         <div class="grid grid-cols-2 gap-2 text-xs">
           <div class="bg-amber-50 border border-amber-200 rounded-xl p-2.5">
@@ -355,7 +341,6 @@
 
   </div>
 
-  <!-- 排休/特休/出國/夜班 預約 Modal -->
   <div id="user-req-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50 no-print">
     <div class="bg-white rounded-2xl max-w-sm w-full p-4 shadow-2xl space-y-3">
       <div class="flex justify-between items-center border-b pb-1.5">
@@ -390,7 +375,6 @@
     </div>
   </div>
 
-  <!-- 排班編輯與打卡工時補正 Modal -->
   <div id="shift-edit-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50 no-print">
     <div class="bg-white rounded-2xl max-w-md w-full p-4 shadow-2xl space-y-3 max-h-[90vh] flex flex-col">
       <div class="flex justify-between items-center border-b pb-1.5">
@@ -406,7 +390,6 @@
     </div>
   </div>
 
-  <!-- A4 班表列印預覽 Modal -->
   <div id="a4-print-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center p-2 md:p-6 z-50 overflow-y-auto">
     <div class="bg-white rounded-2xl max-w-4xl w-full p-4 shadow-2xl space-y-3 my-auto">
       <div class="flex justify-between items-center border-b pb-2 no-print">
@@ -421,10 +404,9 @@
     </div>
   </div>
 
-  <!-- 模組化 JS 引入 (統一版本號破除快取) -->
-  <script src="config.js?v=20260819_2030"></script>
-  <script src="hr.js?v=20260819_2030"></script>
-  <script src="finance.js?v=20260819_2030"></script>
-  <script src="main.js?v=20260819_2030"></script>
+  <script src="config.js?v=20260819_2100"></script>
+  <script src="hr.js?v=20260819_2100"></script>
+  <script src="finance.js?v=20260819_2100"></script>
+  <script src="main.js?v=20260819_2100"></script>
 </body>
 </html>
